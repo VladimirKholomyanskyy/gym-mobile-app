@@ -1,289 +1,265 @@
 package com.neyra.gymapp.data.auth
 
-import com.neyra.gymapp.data.api.AuthApi
-import com.neyra.gymapp.data.api.models.AuthResponse
-import com.neyra.gymapp.data.entities.ProfileEntity
-import com.neyra.gymapp.data.dao.ProfileDao
-import com.neyra.gymapp.data.preferences.PreferencesManager
-import kotlinx.coroutines.flow.Flow
+import android.content.Context
+import android.util.Log
+import com.amplifyframework.auth.AuthSession
+import com.amplifyframework.auth.AuthUserAttribute
+import com.amplifyframework.auth.AuthUserAttributeKey
+import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin
+import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
+import com.amplifyframework.auth.cognito.result.AWSCognitoAuthSignOutResult
+import com.amplifyframework.auth.options.AuthSignUpOptions
+import com.amplifyframework.auth.result.AuthSessionResult
+import com.amplifyframework.auth.result.AuthSignInResult
+import com.amplifyframework.auth.result.AuthSignUpResult
+import com.amplifyframework.core.Amplify
+import com.amplifyframework.core.AmplifyConfiguration
+import com.neyra.gymapp.openapi.apis.AuthApi
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
-import java.util.UUID
-
-@Singleton
-class AuthManager @Inject constructor(
-    private val authApi: AuthApi,
-    private val profileDao: ProfileDao,
-    private val preferencesManager: PreferencesManager
-) {
-    private val _authState = MutableStateFlow<AuthState>(AuthState.NotAuthenticated)
-    val authState: Flow<AuthState> = _authState
-
-    // Initialize auth state based on stored token
-    suspend fun initialize() {
-        val token = preferencesManager.getAuthToken().first()
-        if (token != null) {
-            val externalId = preferencesManager.getExternalId().first()
-            val profileId = preferencesManager.getCurrentProfileId()
-
-            if (externalId != null && profileId != null) {
-                _authState.value = AuthState.Authenticated(profileId)
-            } else {
-                // Token exists but missing profile info - need to refresh
-                refreshUserProfile(token)
-            }
-        } else {
-            _authState.value = AuthState.NotAuthenticated
-        }
-    }
-
-    // Auth with external provider token (Google, etc.)
-    suspend fun authenticateWithIdpToken(idpToken: String, provider: String): Result<UUID> {
-        try {
-            val response = authApi.authenticateWithIdp(provider, idpToken)
-
-            if (response.isSuccessful && response.body() != null) {
-                val authResponse = response.body()!!
-                handleSuccessfulAuth(authResponse)
-                return Result.success(authResponse.profileId)
-            } else {
-                _authState.value = AuthState.Error("Authentication failed: ${response.code()}")
-                return Result.failure(Exception("Authentication failed: ${response.code()}"))
-            }
-        } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Authentication failed")
-            return Result.failure(e)
-        }
-    }
-
-    private suspend fun handleSuccessfulAuth(authResponse: AuthResponse) {
-        // Save auth token
-        preferencesManager.setAuthToken(authResponse.token)
-        preferencesManager.setExternalId(authResponse.externalId)
-        preferencesManager.setCurrentProfileId(authResponse.profileId)
-
-        // Save or update profile in local DB
-        val profile = ProfileEntity(
-            id = authResponse.profileId,
-            externalId = authResponse.externalId,
-            displayName = authResponse.displayName,
-            email = authResponse.email,
-            photoUrl = authResponse.photoUrl,
-            isDefault = true
-        )
-
-        // Clear any existing default profiles
-        profileDao.clearDefaultFlag()
-
-        // Save this profile
-        profileDao.insertProfile(profile)
-
-        _authState.value = AuthState.Authenticated(authResponse.profileId)
-    }
-
-    // Refresh user profile from server
-    suspend fun refreshUserProfile(token: String? = null): Result<UUID> {
-        val authToken = token ?: preferencesManager.getAuthToken().first()
-        if (authToken == null) {
-            _authState.value = AuthState.NotAuthenticated
-            return Result.failure(Exception("No auth token"))
-        }
-
-        try {
-            val response = authApi.getUserProfile("Bearer $authToken")
-
-            if (response.isSuccessful && response.body() != null) {
-                val profileResponse = response.body()!!
-
-                // Update local profile
-                val profile = ProfileEntity(
-                    id = profileResponse.profileId,
-                    externalId = profileResponse.externalId,
-                    displayName = profileResponse.displayName,
-                    email = profileResponse.email,
-                    photoUrl = profileResponse.photoUrl,
-                    isDefault = true
-                )
-
-                profileDao.clearDefaultFlag()
-                profileDao.insertProfile(profile)
-
-                preferencesManager.setCurrentProfileId(profile.id)
-                preferencesManager.setExternalId(profile.externalId)
-
-                _authState.value = AuthState.Authenticated(profile.id)
-                return Result.success(profile.id)
-            } else {
-                if (response.code() == 401) {
-                    // Token expired
-                    logout()
-                    _authState.value = AuthState.TokenExpired
-                } else {
-                    _authState.value = AuthState.Error("Profile refresh failed: ${response.code()}")
-                }
-                return Result.failure(Exception("Profile refresh failed: ${response.code()}"))
-            }
-        } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Profile refresh failed")
-            return Result.failure(e)
-        }
-    }
-
-    // Logout and clear data
-    suspend fun logout() {
-        preferencesManager.clearAllData()
-        _authState.value = AuthState.NotAuthenticated
-    }
-}
-
-sealed class AuthState {
-    object NotAuthenticated : AuthState()
-    data class Authenticated(val profileId: UUID) : AuthState()
-    object TokenExpired : AuthState()
-    data class Error(val message: String) : AuthState()
-}package com.neyra.gymapp.data.auth
-
-import com.neyra.gymapp.data.api.AuthApi
-import com.neyra.gymapp.data.api.models.AuthResponse
-import com.neyra.gymapp.data.entities.ProfileEntity
-import com.neyra.gymapp.data.dao.ProfileDao
-import com.neyra.gymapp.data.preferences.PreferencesManager
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
-import java.util.UUID
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 @Singleton
 class AuthManager @Inject constructor(
-    private val authApi: AuthApi,
-    private val profileDao: ProfileDao,
-    private val preferencesManager: PreferencesManager
+    @ApplicationContext private val context: Context,
+    private val authApi: AuthApi
 ) {
-    private val _authState = MutableStateFlow<AuthState>(AuthState.NotAuthenticated)
-    val authState: Flow<AuthState> = _authState
+    private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
+    val authState: StateFlow<AuthState> = _authState
 
-    // Initialize auth state based on stored token
+    private var isInitialized = false
+
     suspend fun initialize() {
-        val token = preferencesManager.getAuthToken().first()
-        if (token != null) {
-            val externalId = preferencesManager.getExternalId().first()
-            val profileId = preferencesManager.getCurrentProfileId()
-
-            if (externalId != null && profileId != null) {
-                _authState.value = AuthState.Authenticated(profileId)
-            } else {
-                // Token exists but missing profile info - need to refresh
-                refreshUserProfile(token)
-            }
-        } else {
-            _authState.value = AuthState.NotAuthenticated
-        }
-    }
-
-    // Auth with external provider token (Google, etc.)
-    suspend fun authenticateWithIdpToken(idpToken: String, provider: String): Result<UUID> {
-        try {
-            val response = authApi.authenticateWithIdp(provider, idpToken)
-
-            if (response.isSuccessful && response.body() != null) {
-                val authResponse = response.body()!!
-                handleSuccessfulAuth(authResponse)
-                return Result.success(authResponse.profileId)
-            } else {
-                _authState.value = AuthState.Error("Authentication failed: ${response.code()}")
-                return Result.failure(Exception("Authentication failed: ${response.code()}"))
-            }
-        } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Authentication failed")
-            return Result.failure(e)
-        }
-    }
-
-    private suspend fun handleSuccessfulAuth(authResponse: AuthResponse) {
-        // Save auth token
-        preferencesManager.setAuthToken(authResponse.token)
-        preferencesManager.setExternalId(authResponse.externalId)
-        preferencesManager.setCurrentProfileId(authResponse.profileId)
-
-        // Save or update profile in local DB
-        val profile = ProfileEntity(
-            id = authResponse.profileId,
-            externalId = authResponse.externalId,
-            displayName = authResponse.displayName,
-            email = authResponse.email,
-            photoUrl = authResponse.photoUrl,
-            isDefault = true
-        )
-
-        // Clear any existing default profiles
-        profileDao.clearDefaultFlag()
-
-        // Save this profile
-        profileDao.insertProfile(profile)
-
-        _authState.value = AuthState.Authenticated(authResponse.profileId)
-    }
-
-    // Refresh user profile from server
-    suspend fun refreshUserProfile(token: String? = null): Result<UUID> {
-        val authToken = token ?: preferencesManager.getAuthToken().first()
-        if (authToken == null) {
-            _authState.value = AuthState.NotAuthenticated
-            return Result.failure(Exception("No auth token"))
-        }
+        if (isInitialized) return
 
         try {
-            val response = authApi.getUserProfile("Bearer $authToken")
-
+            // Fetch auth config from API
+            val response = authApi.getAuthConfig()
             if (response.isSuccessful && response.body() != null) {
-                val profileResponse = response.body()!!
-
-                // Update local profile
-                val profile = ProfileEntity(
-                    id = profileResponse.profileId,
-                    externalId = profileResponse.externalId,
-                    displayName = profileResponse.displayName,
-                    email = profileResponse.email,
-                    photoUrl = profileResponse.photoUrl,
-                    isDefault = true
-                )
-
-                profileDao.clearDefaultFlag()
-                profileDao.insertProfile(profile)
-
-                preferencesManager.setCurrentProfileId(profile.id)
-                preferencesManager.setExternalId(profile.externalId)
-
-                _authState.value = AuthState.Authenticated(profile.id)
-                return Result.success(profile.id)
-            } else {
-                if (response.code() == 401) {
-                    // Token expired
-                    logout()
-                    _authState.value = AuthState.TokenExpired
-                } else {
-                    _authState.value = AuthState.Error("Profile refresh failed: ${response.code()}")
+                val config = response.body()!!
+                // Configure Amplify with auth config
+                val configJson = JSONObject().apply {
+                    put("auth", JSONObject().apply {
+                        put("plugins", JSONObject().apply {
+                            put("awsCognitoAuthPlugin", JSONObject().apply {
+                                put("UserAgent", "aws-amplify-android/2.14.9")
+                                put("IdentityManager", JSONObject().apply {
+                                    put("Default", JSONObject())
+                                })
+                                put("CognitoUserPool", JSONObject().apply {
+                                    put("Default", JSONObject().apply {
+                                        put("PoolId", config.userPoolId)
+                                        put("AppClientId", config.userPoolClientId)
+                                        put("Region", config.userPoolRegion)
+                                    })
+                                })
+                                put("Auth", JSONObject().apply {
+                                    put("Default", JSONObject().apply {
+                                        put("authenticationFlowType", config.authenticationFlowType)
+                                    })
+                                })
+                            })
+                        })
+                    })
                 }
-                return Result.failure(Exception("Profile refresh failed: ${response.code()}"))
+
+                val amplifyConfig = AmplifyConfiguration.fromJson(configJson)
+
+                Amplify.addPlugin(AWSCognitoAuthPlugin())
+                Amplify.configure(amplifyConfig, context)
+                isInitialized = true
+
+                // Check if user is already signed in
+                checkAuthStatus()
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing auth", e)
+            _authState.value =
+                AuthState.Error("Failed to initialize authentication: ${e.message}")
+        }
+
+    }
+
+    private suspend fun checkAuthStatus() {
+        try {
+            val session = withContext(Dispatchers.IO) {
+                getAuthSession()
+            }
+
+            if (session.isSignedIn) {
+                // Get user ID from the Cognito session
+                val userId = session.userSubId ?: ""
+                _authState.value = AuthState.Authenticated(userId)
+            } else {
+                _authState.value = AuthState.Unauthenticated
             }
         } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Profile refresh failed")
-            return Result.failure(e)
+            Log.e(TAG, "Error checking auth status", e)
+            _authState.value = AuthState.Unauthenticated
         }
     }
 
-    // Logout and clear data
-    suspend fun logout() {
-        preferencesManager.clearAllData()
-        _authState.value = AuthState.NotAuthenticated
-    }
-}
+    suspend fun signUp(
+        username: String,
+        password: String,
+        email: String
+    ): Result<AuthSignUpResult> {
+        return try {
 
-sealed class AuthState {
-    object NotAuthenticated : AuthState()
-    data class Authenticated(val profileId: UUID) : AuthState()
-    object TokenExpired : AuthState()
-    data class Error(val message: String) : AuthState()
+            val attributes = AuthUserAttribute(AuthUserAttributeKey.email(), email)
+            val options = AuthSignUpOptions.builder()
+                .userAttributes(listOf(attributes))
+                .build()
+
+            val result = withContext(Dispatchers.IO) {
+                suspendCancellableCoroutine { continuation ->
+                    Amplify.Auth.signUp(
+                        username,
+                        password,
+                        options,
+                        { continuation.resume(it) },
+                        { continuation.resumeWithException(it) }
+                    )
+                }
+            }
+
+            Result.success(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "Sign up failed", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun confirmSignUp(username: String, confirmationCode: String): Result<Boolean> {
+        return try {
+            val result = withContext(Dispatchers.IO) {
+                suspendCancellableCoroutine { continuation ->
+                    Amplify.Auth.confirmSignUp(
+                        username,
+                        confirmationCode,
+                        { continuation.resume(it) },
+                        { continuation.resumeWithException(it) }
+                    )
+                }
+            }
+
+            Result.success(result.isSignUpComplete)
+        } catch (e: Exception) {
+            Log.e(TAG, "Confirm sign up failed", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun signIn(username: String, password: String): Result<AuthSignInResult> {
+        return try {
+            val result = withContext(Dispatchers.IO) {
+                suspendCancellableCoroutine { continuation ->
+                    Amplify.Auth.signIn(
+                        username,
+                        password,
+                        { continuation.resume(it) },
+                        { continuation.resumeWithException(it) }
+                    )
+                }
+            }
+
+            if (result.isSignedIn) {
+                checkAuthStatus()
+            }
+
+            Result.success(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "Sign in failed", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun signOut(): Result<Boolean> {
+        return try {
+            withContext(Dispatchers.IO) {
+                suspendCancellableCoroutine { continuation ->
+                    Amplify.Auth.signOut { result ->
+                        when (result) {
+                            is AWSCognitoAuthSignOutResult.CompleteSignOut -> {
+                                continuation.resume(Result.success(true))
+                            }
+
+                            is AWSCognitoAuthSignOutResult.PartialSignOut -> {
+                                // This occurs when sign out from some services succeeded, but not from others
+                                Log.w(TAG, "Partial sign out: ${result.hostedUIError?.exception}")
+                                continuation.resume(Result.success(true))
+                            }
+
+                            is AWSCognitoAuthSignOutResult.FailedSignOut -> {
+                                continuation.resume(Result.failure(result.exception))
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Sign out failed", e)
+            Result.failure(e)
+        } finally {
+            _authState.value = AuthState.Unauthenticated
+        }
+    }
+
+    suspend fun getAuthToken(): String? {
+        return try {
+            val session = withContext(Dispatchers.IO) {
+                getAuthSession()
+            }
+            session.accessToken
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get auth token", e)
+            null
+        }
+    }
+
+    private suspend fun getAuthSession(): CognitoAuthSession {
+        return withContext(Dispatchers.IO) {
+            suspendCancellableCoroutine { continuation ->
+                Amplify.Auth.fetchAuthSession(
+                    { continuation.resume(it.toCognitoSession()) },
+                    { continuation.resumeWithException(it) }
+                )
+            }
+        }
+    }
+
+    private fun AuthSession.toCognitoSession(): CognitoAuthSession {
+        val session = this as AWSCognitoAuthSession
+
+        return CognitoAuthSession(
+            isSignedIn = session.isSignedIn,
+            userSubId = when (session.identityIdResult.type) {
+                AuthSessionResult.Type.SUCCESS -> session.identityIdResult.value
+                else -> null
+            },
+            accessToken = when (session.userPoolTokensResult.type) {
+                AuthSessionResult.Type.SUCCESS -> session.userPoolTokensResult.value?.idToken
+                else -> null
+            }
+        )
+    }
+
+    data class CognitoAuthSession(
+        val isSignedIn: Boolean,
+        val userSubId: String?,
+        val accessToken: String?
+    )
+
+    companion object {
+        private const val TAG = "AuthManager"
+    }
 }

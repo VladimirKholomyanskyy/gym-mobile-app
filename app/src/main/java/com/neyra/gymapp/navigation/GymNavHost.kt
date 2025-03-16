@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -13,6 +14,9 @@ import androidx.navigation.navArgument
 import com.google.gson.Gson
 import com.neyra.gymapp.openapi.models.TrainingProgram
 import com.neyra.gymapp.openapi.models.WorkoutResponse
+import com.neyra.gymapp.ui.auth.AuthViewModel
+import com.neyra.gymapp.ui.auth.LoginScreen
+import com.neyra.gymapp.ui.auth.SignUpScreen
 import com.neyra.gymapp.ui.components.BottomNavBar
 import com.neyra.gymapp.ui.exercises.ExerciseDetailsScreen
 import com.neyra.gymapp.ui.exercises.ExerciseListScreen
@@ -27,6 +31,7 @@ import com.neyra.gymapp.ui.workouts.WorkoutsScreen
 @Composable
 fun GymNavHost() {
     val navController = rememberNavController()
+    val authViewModel: AuthViewModel = hiltViewModel()
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -37,6 +42,22 @@ fun GymNavHost() {
             startDestination = "home",
             modifier = Modifier.padding(paddingValues)
         ) {
+            composable("login") {
+                LoginScreen(
+                    onLoginSuccess = {
+                        navController.navigate("home") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                    },
+                    onNavigateToSignUp = { navController.navigate("signup") }
+                )
+            }
+
+            composable("signup") {
+                SignUpScreen(
+                    onNavigateToLogin = { navController.navigate("login") }
+                )
+            }
             composable("home") { HomeScreen() }
             composable("calendar") { CalendarView() }
             composable("trainingPrograms") {

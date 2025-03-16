@@ -122,4 +122,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
 
     implementation(libs.androidx.datastore.preferences)
+
+    implementation(libs.aws.auth.cognito)
+    implementation(libs.core)
 }
