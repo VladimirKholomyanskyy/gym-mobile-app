@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -30,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,112 +46,174 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.neyra.gymapp.openapi.models.WorkoutResponse
+import com.neyra.gymapp.common.UiState
+import com.neyra.gymapp.domain.model.Workout
 import com.neyra.gymapp.ui.components.ConfirmationBottomDrawer
 import com.neyra.gymapp.viewmodel.WorkoutsViewModel
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkoutsScreen(
     trainingProgramId: String,
-    onWorkoutSelected: (workout: WorkoutResponse) -> Unit,
+    onWorkoutSelected: (workoutId: String) -> Unit,
+    onBackPressed: () -> Unit,
     viewModel: WorkoutsViewModel = hiltViewModel()
 ) {
-    // Trigger fetching of workouts when the screen appears or programId changes.
-    LaunchedEffect(program) {
-        viewModel.fetchWorkouts(program.id)
+    // Trigger fetching of workouts when the screen appears or programId changes
+    LaunchedEffect(trainingProgramId) {
+        viewModel.fetchWorkouts(trainingProgramId)
     }
 
-    val workouts by viewModel.workouts.collectAsState()
-    val isLoading = viewModel.isLoading.collectAsState()
+    val workoutsState by viewModel.workouts.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val isCreateWorkoutDrawerVisible by viewModel.isCreateWorkoutDrawerVisible.collectAsState()
     val isUpdateWorkoutDrawerVisible by viewModel.isUpdateWorkoutDrawerVisible.collectAsState()
-    val selectedWorkout = viewModel.selectedWorkout.collectAsState()
-    if (isLoading.value) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+    val selectedWorkout by viewModel.selectedWorkout.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Show error message in snackbar if present
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            snackbarHostState.showSnackbar(errorMessage!!)
         }
-    } else {
-        Scaffold(
-            topBar = {
-                CenterAlignedTopAppBar(
-                    title = { Text(text = program.name) },
-                    navigationIcon = {
-                        IconButton(onClick = { /* do something */ }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Localized description"
-                            )
-                        }
-                    }
-                )
-            }
-        ) { paddingValues ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                // Display list of workouts
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(16.dp)
-                ) {
-                    items(workouts) { workout ->
-                        WorkoutCard(workout = workout, onClick = { onWorkoutSelected(workout) },
-                            onEdit = {
-                                viewModel.setSelectedWorkout(workout)
-                                viewModel.showUpdateWorkoutDrawer()
-                            },
-                            onDelete = { viewModel.deleteWorkout(program.id, workout.id) })
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(text = "Workouts") },
+                navigationIcon = {
+                    IconButton(onClick = onBackPressed) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Go back"
+                        )
                     }
                 }
-                FloatingActionButton(
-                    onClick = { viewModel.showCreateWorkoutDrawer() },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Training Program")
-                }
-            }
-
-        }
-        // Create Drawer
-        if (isCreateWorkoutDrawerVisible) {
-            ModalBottomSheet(
-                onDismissRequest = { viewModel.hideCreateWorkoutDrawer() }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { viewModel.showCreateWorkoutDrawer() },
+                modifier = Modifier.padding(16.dp)
             ) {
-                CreateWorkoutDrawer(
-                    onCancel = { viewModel.hideCreateWorkoutDrawer() },
-                    onCreate = { name ->
-                        viewModel.createWorkout(program.id, name)
-                    }
-                )
+                Icon(Icons.Default.Add, contentDescription = "Add Workout")
             }
         }
-
-        // Update Drawer
-        if (isUpdateWorkoutDrawerVisible) {
-            ModalBottomSheet(
-                onDismissRequest = { viewModel.hideUpdateWorkoutDrawer() }
-            ) {
-                selectedWorkout.value?.let { workout ->
-                    UpdateWorkoutDrawer(
-                        onCancel = { viewModel.hideUpdateWorkoutDrawer() },
-                        onUpdate = { updatedName ->
-                            updatedName?.let {
-                                viewModel.updateWorkout(
-                                    program.id,
-                                    workout.id,
-                                    updatedName
-                                )
-                            }
-
-                        },
-                        workout = workout
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            when (val state = workoutsState) {
+                is UiState.Loading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center)
                     )
                 }
+
+                is UiState.Success -> {
+                    if (state.data.isEmpty()) {
+                        // Empty state
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "No workouts yet",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Add your first workout to get started",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(onClick = { viewModel.showCreateWorkoutDrawer() }) {
+                                Text("Add Workout")
+                            }
+                        }
+                    } else {
+                        // List of workouts
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp)
+                        ) {
+                            items(state.data) { workout ->
+                                WorkoutCard(
+                                    workout = workout,
+                                    onClick = { onWorkoutSelected(workout.id ?: "") },
+                                    onEdit = {
+                                        viewModel.setSelectedWorkout(workout)
+                                        viewModel.showUpdateWorkoutDrawer()
+                                    },
+                                    onDelete = {
+                                        workout.id?.let { id ->
+                                            viewModel.deleteWorkout(trainingProgramId, id)
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+                    }
+                }
+
+                is UiState.Error -> {
+                    // Error state
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Something went wrong",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = state.message,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { viewModel.fetchWorkouts(trainingProgramId) }) {
+                            Text("Retry")
+                        }
+                    }
+                }
             }
+        }
+
+        // Create Workout Drawer
+        if (isCreateWorkoutDrawerVisible) {
+            CreateWorkoutDrawer(
+                onCancel = { viewModel.hideCreateWorkoutDrawer() },
+                onCreate = { name -> viewModel.createWorkout(trainingProgramId, name) }
+            )
+        }
+
+        // Update Workout Drawer
+        if (isUpdateWorkoutDrawerVisible && selectedWorkout != null) {
+            UpdateWorkoutDrawer(
+                workout = selectedWorkout!!,
+                onCancel = { viewModel.hideUpdateWorkoutDrawer() },
+                onUpdate = { updatedName ->
+                    selectedWorkout?.id?.let { id ->
+                        viewModel.updateWorkout(trainingProgramId, id, updatedName)
+                    }
+                }
+            )
         }
     }
 }
@@ -156,7 +221,7 @@ fun WorkoutsScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkoutCard(
-    workout: WorkoutResponse,
+    workout: Workout,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -167,7 +232,6 @@ fun WorkoutCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
             .clickable { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
@@ -178,12 +242,31 @@ fun WorkoutCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Program Details
+            // Workout Details
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = workout.name,
                     style = MaterialTheme.typography.titleLarge
                 )
+
+                // Show exercise count if available
+                if (workout.exercises.isNotEmpty()) {
+                    Text(
+                        text = "${workout.exercises.size} exercises",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Show estimated duration if available
+                val duration = workout.estimateDuration()
+                if (duration.toMinutes() > 0) {
+                    Text(
+                        text = "Est. time: ${duration.toMinutes()} min",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
             }
 
             // Menu Button with 3 Dots
@@ -194,8 +277,9 @@ fun WorkoutCard(
                 )
             }
         }
-
     }
+
+    // Options Drawer
     if (isDrawerVisible) {
         ModalBottomSheet(
             onDismissRequest = { isDrawerVisible = false }
@@ -227,11 +311,17 @@ fun WorkoutCard(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Delete", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Delete",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
     }
+
+    // Delete Confirmation
     if (isConfirmationVisible) {
         ConfirmationBottomDrawer(
             message = "Are you sure you want to delete this workout?",
@@ -244,96 +334,133 @@ fun WorkoutCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateWorkoutDrawer(
     onCancel: () -> Unit,
     onCreate: (String) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
+    var workoutName by remember { mutableStateOf("") }
+    var isNameError by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
+    ModalBottomSheet(
+        onDismissRequest = onCancel
     ) {
-        Text(
-            text = "Create Training Program",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
         ) {
-            TextButton(onClick = onCancel) {
-                Text("Cancel")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(
-                onClick = {
-                    if (name.isNotBlank()) {
-                        onCreate(name)
+            Text(
+                text = "Create Workout",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            OutlinedTextField(
+                value = workoutName,
+                onValueChange = {
+                    workoutName = it
+                    isNameError = it.isBlank()
+                },
+                label = { Text("Workout Name") },
+                isError = isNameError,
+                supportingText = {
+                    if (isNameError) {
+                        Text("Name cannot be empty")
                     }
-                }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Create")
+                TextButton(onClick = onCancel) {
+                    Text("Cancel")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        if (workoutName.isBlank()) {
+                            isNameError = true
+                        } else {
+                            onCreate(workoutName)
+                        }
+                    }
+                ) {
+                    Text("Create")
+                }
             }
         }
     }
 }
 
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateWorkoutDrawer(
-    workout: WorkoutResponse,
+    workout: Workout,
     onCancel: () -> Unit,
-    onUpdate: (String?) -> Unit
+    onUpdate: (String) -> Unit
 ) {
-    var newName by remember { mutableStateOf(workout.name) }
+    var workoutName by remember { mutableStateOf(workout.name) }
+    var isNameError by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
+    ModalBottomSheet(
+        onDismissRequest = onCancel
     ) {
-        Text(
-            text = "Update Workout",
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        OutlinedTextField(
-            value = newName,
-            onValueChange = { newName = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
         ) {
-            TextButton(onClick = onCancel) {
-                Text("Cancel")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                val name = if (newName != workout.name) newName else null
-                onUpdate(name)
-            }) {
-                Text("Update")
+            Text(
+                text = "Update Workout",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            OutlinedTextField(
+                value = workoutName,
+                onValueChange = {
+                    workoutName = it
+                    isNameError = it.isBlank()
+                },
+                label = { Text("Workout Name") },
+                isError = isNameError,
+                supportingText = {
+                    if (isNameError) {
+                        Text("Name cannot be empty")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                TextButton(onClick = onCancel) {
+                    Text("Cancel")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = {
+                        if (workoutName.isBlank()) {
+                            isNameError = true
+                        } else {
+                            onUpdate(workoutName)
+                        }
+                    },
+                    enabled = workoutName != workout.name && workoutName.isNotBlank()
+                ) {
+                    Text("Update")
+                }
             }
         }
     }
