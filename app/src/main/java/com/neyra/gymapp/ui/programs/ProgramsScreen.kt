@@ -1,6 +1,5 @@
 package com.neyra.gymapp.ui.programs
 
-
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,12 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,17 +25,18 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,108 +44,226 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.neyra.gymapp.data.entities.TrainingProgramEntity
-import com.neyra.gymapp.ui.components.ConfirmationBottomDrawer
+import com.neyra.gymapp.common.UiState
+import com.neyra.gymapp.domain.model.TrainingProgram
 import com.neyra.gymapp.viewmodel.TrainingProgramsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrainingScreen(
-    onTrainingSelected: (trainingProgramId: String) -> Unit,
+fun TrainingProgramsScreen(
+    onProgramSelected: (programId: String) -> Unit,
     onCalendarClicked: () -> Unit,
     viewModel: TrainingProgramsViewModel = hiltViewModel()
 ) {
-    val programsState = viewModel.programs.collectAsState()
-    val isLoading = viewModel.isLoading.collectAsState()
+    val programsState by viewModel.programs.collectAsState()
     val isCreateProgramDrawerVisible by viewModel.isCreateProgramDrawerVisible.collectAsState()
     val isUpdateProgramDrawerVisible by viewModel.isUpdateProgramDrawerVisible.collectAsState()
-    val selectedProgram = viewModel.selectedProgram.collectAsState()
+    val selectedProgram by viewModel.selectedProgram.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Handle error messages
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Training Programs") },
                 actions = {
-                    IconButton(onClick = onCalendarClicked) {
-                        Icon(Icons.Default.CalendarToday, contentDescription = "Open Calendar")
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        if (isLoading.value) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                ) {
-                    items(programsState.value) { program ->
-                        TrainingProgramCard(
-                            program = program,
-                            onClick = { onTrainingSelected(program.id) },
-                            onEdit = {
-                                viewModel.setSelectedProgram(program)
-                                viewModel.showUpdateProgramDrawer()
-                            },
-                            onDelete = { viewModel.deleteTrainingProgram(program.id) }
+                    // Calendar icon to navigate to calendar view
+                    androidx.compose.material3.IconButton(onClick = onCalendarClicked) {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = "Open Calendar"
                         )
                     }
                 }
-                FloatingActionButton(
-                    onClick = { viewModel.showCreateProgramDrawer() },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Training Program")
-                }
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { viewModel.showCreateProgramDrawer() }) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Create Training Program"
+                )
             }
-
-            // Create Drawer
-            if (isCreateProgramDrawerVisible) {
-                ModalBottomSheet(
-                    onDismissRequest = { viewModel.hideCreateProgramDrawer() }
-                ) {
-                    CreateTrainingProgramDrawer(
-                        onCancel = { viewModel.hideCreateProgramDrawer() },
-                        onCreate = { name, description ->
-                            viewModel.createTrainingProgram(name, description)
-                        }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            when (val state = programsState) {
+                is UiState.Loading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center)
                     )
                 }
-            }
 
-            // Update Drawer
-            if (isUpdateProgramDrawerVisible) {
-                ModalBottomSheet(
-                    onDismissRequest = { viewModel.hideUpdateProgramDrawer() }
-                ) {
-                    selectedProgram.value?.let { program ->
-                        UpdateTrainingProgramDrawer(
-                            program = program,
-                            onCancel = { viewModel.hideUpdateProgramDrawer() },
-                            onUpdate = { updatedName, updatedDescription ->
-                                viewModel.updateTrainingProgram(
-                                    program.id,
-                                    updatedName ?: program.name,
-                                    updatedDescription ?: program.description
+                is UiState.Success -> {
+                    if (state.data.isEmpty()) {
+                        EmptyStateContent(
+                            onCreateProgram = { viewModel.showCreateProgramDrawer() }
+                        )
+                    } else {
+                        TrainingProgramsList(
+                            programs = state.data,
+                            onProgramSelected = onProgramSelected,
+                            onEditProgram = { program ->
+                                viewModel.setSelectedProgram(program)
+                                viewModel.showUpdateProgramDrawer()
+                            },
+                            onDeleteProgram = { program ->
+                                viewModel.deleteTrainingProgram(
+                                    program.id ?: return@TrainingProgramsList
+
                                 )
                             }
                         )
                     }
                 }
+
+                is UiState.Error -> {
+                    ErrorContent(
+                        message = state.message,
+                        onRetry = { viewModel.fetchTrainingPrograms() }
+                    )
+                }
+            }
+        }
+
+        // Create Program Drawer
+        if (isCreateProgramDrawerVisible) {
+            CreateTrainingProgramDrawer(
+                onCancel = { viewModel.hideCreateProgramDrawer() },
+                onCreate = { name, description ->
+                    viewModel.createTrainingProgram(name, description)
+                }
+            )
+        }
+
+        // Update Program Drawer
+        if (isUpdateProgramDrawerVisible) {
+            selectedProgram?.let { program ->
+                UpdateTrainingProgramDrawer(
+                    program = program,
+                    onCancel = { viewModel.hideUpdateProgramDrawer() },
+                    onUpdate = { name, description ->
+                        viewModel.updateTrainingProgram(
+                            program.id ?: return@UpdateTrainingProgramDrawer,
+                            name,
+                            description
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TrainingProgramsList(
+    programs: List<TrainingProgram>,
+    onProgramSelected: (programId: String) -> Unit,
+    onEditProgram: (TrainingProgram) -> Unit,
+    onDeleteProgram: (TrainingProgram) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        items(programs) { program ->
+            TrainingProgramCard(
+                program = program,
+                onClick = { onProgramSelected(program.id ?: "") },
+                onEdit = { onEditProgram(program) },
+                onDelete = { onDeleteProgram(program) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+fun EmptyStateContent(
+    onCreateProgram: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "No Training Programs",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Text(
+                text = "Create your first training program to get started",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Button(onClick = onCreateProgram) {
+                Text("Create Program")
+            }
+        }
+    }
+}
+
+@Composable
+fun ErrorContent(
+    message: String,
+    onRetry: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                contentDescription = "Error",
+                modifier = Modifier
+                    .size(100.dp)
+                    .padding(bottom = 16.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
+            Text(
+                text = "Oops! Something went wrong",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Button(onClick = onRetry) {
+                Text("Retry")
             }
         }
     }
@@ -152,19 +272,17 @@ fun TrainingScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainingProgramCard(
-    program: TrainingProgramEntity,
+    program: TrainingProgram,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    var isDrawerVisible by remember { mutableStateOf(false) }
-    var isConfirmationVisible by remember { mutableStateOf(false) }
+    var isOptionsExpanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .clickable { onClick() },
+            .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Row(
@@ -174,82 +292,73 @@ fun TrainingProgramCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Program Details
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = program.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontSize = 20.sp
+                    style = MaterialTheme.typography.titleMedium
                 )
-                program.description?.let { description ->
-                    Spacer(modifier = Modifier.height(4.dp))
+                program.description?.let {
                     Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontSize = 14.sp
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // Display program complexity
+                Text(
+                    text = "Complexity: ${program.getProgramComplexity().name}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
             }
 
-            // Menu Button with 3 Dots
-            IconButton(onClick = { isDrawerVisible = true }) {
+            // More options button
+            androidx.compose.material3.IconButton(
+                onClick = { isOptionsExpanded = true }
+            ) {
                 Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "More Options"
+                    Icons.Default.MoreVert,
+                    contentDescription = "Program Options"
                 )
             }
         }
     }
 
-    // Bottom Drawer for Edit/Delete Options
-    if (isDrawerVisible) {
+    // Options Bottom Sheet
+    if (isOptionsExpanded) {
         ModalBottomSheet(
-            onDismissRequest = { isDrawerVisible = false }
+            onDismissRequest = { isOptionsExpanded = false }
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                Text(
-                    text = "Options",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                HorizontalDivider()
                 TextButton(
                     onClick = {
-                        isDrawerVisible = false
                         onEdit()
+                        isOptionsExpanded = false
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Edit", style = MaterialTheme.typography.bodyLarge)
+                    Text("Edit Program")
                 }
                 TextButton(
                     onClick = {
-                        isDrawerVisible = false
-                        isConfirmationVisible = true
+                        onDelete()
+                        isOptionsExpanded = false
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
-                    Text("Delete", style = MaterialTheme.typography.bodyLarge)
+                    Text("Delete Program")
                 }
             }
         }
     }
-    if (isConfirmationVisible) {
-        ConfirmationBottomDrawer(
-            message = "Are you sure you want to delete this training program?",
-            onConfirm = {
-                onDelete()
-                isConfirmationVisible = false
-            },
-            onCancel = { isConfirmationVisible = false }
-        )
-    }
 }
-
 
 @Composable
 fun CreateTrainingProgramDrawer(
@@ -273,24 +382,26 @@ fun CreateTrainingProgramDrawer(
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
+            label = { Text("Program Name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
             value = description,
             onValueChange = { description = it },
             label = { Text("Description (Optional)") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
         ) {
             TextButton(onClick = onCancel) {
                 Text("Cancel")
@@ -299,7 +410,7 @@ fun CreateTrainingProgramDrawer(
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onCreate(name, description.ifBlank { null })
+                        onCreate(name, description.takeIf { it.isNotBlank() })
                     }
                 }
             ) {
@@ -309,15 +420,14 @@ fun CreateTrainingProgramDrawer(
     }
 }
 
-
 @Composable
 fun UpdateTrainingProgramDrawer(
-    program: TrainingProgramEntity,
+    program: TrainingProgram,
     onCancel: () -> Unit,
     onUpdate: (String?, String?) -> Unit
 ) {
-    var newName by remember { mutableStateOf(program.name) }
-    var newDescription by remember { mutableStateOf(program.description ?: "") }
+    var name by remember { mutableStateOf(program.name) }
+    var description by remember { mutableStateOf(program.description ?: "") }
 
     Column(
         modifier = Modifier
@@ -331,37 +441,44 @@ fun UpdateTrainingProgramDrawer(
         )
 
         OutlinedTextField(
-            value = newName,
-            onValueChange = { newName = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Program Name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
-            value = newDescription,
-            onValueChange = { newDescription = it },
+            value = description,
+            onValueChange = { description = it },
             label = { Text("Description (Optional)") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
         ) {
             TextButton(onClick = onCancel) {
                 Text("Cancel")
             }
             Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                val name = if (newName != program.name) newName else null
-                val description =
-                    if (newDescription != program.description) newDescription else null
-                onUpdate(name, description)
-            }) {
+            Button(
+                onClick = {
+                    val updatedName = name.takeIf { it != program.name }
+                    val updatedDescription = description.takeIf { it != program.description }
+
+                    // Only call update if something has changed
+                    if (updatedName != null || updatedDescription != null) {
+                        onUpdate(updatedName, updatedDescription)
+                    }
+                }
+            ) {
                 Text("Update")
             }
         }

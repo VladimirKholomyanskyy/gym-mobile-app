@@ -8,12 +8,11 @@ import androidx.room.Transaction
 import com.neyra.gymapp.data.entities.SyncStatus
 import com.neyra.gymapp.data.entities.TrainingProgramEntity
 import kotlinx.coroutines.flow.Flow
-import java.util.UUID
 
 @Dao
 interface TrainingProgramDao {
     @Query("SELECT * FROM training_programs WHERE profileId = :profileId")
-    fun getAllByProfileId(profileId: UUID): Flow<List<TrainingProgramEntity>>
+    fun getAllByProfileId(profileId: String): Flow<List<TrainingProgramEntity>>
 
     @Query("SELECT * FROM training_programs WHERE syncStatus IN (:statuses)")
     fun getAllWithSyncStatus(vararg statuses: SyncStatus): Flow<List<TrainingProgramEntity>>
@@ -28,18 +27,18 @@ interface TrainingProgramDao {
     suspend fun insertAll(programs: List<TrainingProgramEntity>)
 
     @Query("UPDATE training_programs SET syncStatus = :status WHERE id = :id")
-    suspend fun updateSyncStatus(id: UUID, status: SyncStatus)
+    suspend fun updateSyncStatus(id: String, status: SyncStatus)
 
     @Query("UPDATE training_programs SET id = :newId, syncStatus = :syncStatus, lastModified = :lastModified WHERE id = :oldId")
     suspend fun updateIdAndSyncStatus(
-        oldId: UUID,
-        newId: UUID,
+        oldId: String,
+        newId: String,
         syncStatus: SyncStatus,
         lastModified: Long
     )
 
     @Query("SELECT * FROM training_programs WHERE id = :id")
-    suspend fun getById(id: UUID): TrainingProgramEntity?
+    suspend fun getById(id: String): TrainingProgramEntity?
 
     @Transaction
     suspend fun upsertAll(programs: List<TrainingProgramEntity>) {
@@ -47,6 +46,8 @@ interface TrainingProgramDao {
     }
 
     @Query("DELETE FROM training_programs WHERE id = :id")
-    suspend fun delete(id: UUID)
+    suspend fun delete(id: String)
 
+    @Query("SELECT COUNT(*) FROM training_programs WHERE profileId = :profileId")
+    suspend fun countByProfileId(profileId: String): Int
 }

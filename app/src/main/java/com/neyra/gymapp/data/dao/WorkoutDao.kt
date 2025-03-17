@@ -7,7 +7,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.neyra.gymapp.data.entities.WorkoutEntity
 import kotlinx.coroutines.flow.Flow
-import java.util.UUID
 
 @Dao
 interface WorkoutDao {
@@ -21,7 +20,7 @@ interface WorkoutDao {
     fun getWorkoutsByTrainingProgramId(trainingProgramId: String): Flow<List<WorkoutEntity>>
 
     @Query("UPDATE workouts SET name = :name WHERE id = :id")
-    suspend fun update(id: UUID, name: String)
+    suspend fun update(id: String, name: String)
 
     @Query("DELETE FROM workouts WHERE id = :id")
     suspend fun delete(id: String)

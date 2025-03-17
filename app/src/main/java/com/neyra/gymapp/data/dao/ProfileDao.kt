@@ -12,7 +12,7 @@ import java.util.UUID
 @Dao
 interface ProfileDao {
     @Query("SELECT * FROM profiles WHERE id = :profileId LIMIT 1")
-    suspend fun getProfile(profileId: UUID): ProfileEntity?
+    suspend fun getProfile(profileId: String): ProfileEntity?
 
     @Query("SELECT * FROM profiles")
     fun getAllProfiles(): Flow<List<ProfileEntity>>
@@ -21,7 +21,7 @@ interface ProfileDao {
     suspend fun getProfileByExternalId(externalId: String): ProfileEntity?
 
     @Query("SELECT * FROM profiles WHERE id = :id LIMIT 1")
-    suspend fun getProfileById(id: UUID): ProfileEntity?
+    suspend fun getProfileById(id: String): ProfileEntity?
 
     @Query("SELECT * FROM profiles WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefaultProfile(): ProfileEntity?
@@ -33,10 +33,10 @@ interface ProfileDao {
     suspend fun clearDefaultFlag()
 
     @Query("UPDATE profiles SET isDefault = 1 WHERE id = :profileId")
-    suspend fun setDefaultProfile(profileId: UUID)
+    suspend fun setDefaultProfile(profileId: String)
 
     @Query("DELETE FROM profiles WHERE id = :profileId")
-    suspend fun deleteProfile(profileId: UUID)
+    suspend fun deleteProfile(profileId: String)
 
     @Query(
         """

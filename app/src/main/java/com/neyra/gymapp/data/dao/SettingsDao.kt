@@ -7,12 +7,11 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.neyra.gymapp.data.entities.SettingsEntity
-import java.util.UUID
 
 @Dao
 interface SettingsDao {
     @Query("SELECT * FROM settings WHERE id = :id")
-    suspend fun getSettings(id: UUID): SettingsEntity?
+    suspend fun getSettings(id: String): SettingsEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSettings(settings: SettingsEntity)
@@ -30,7 +29,7 @@ interface SettingsDao {
     """
     )
     suspend fun updateSettings(
-        id: UUID,
+        id: String,
         language: String?,
         measurementSystem: LocaleData.MeasurementSystem?,
         timeZone: TimeZone?,

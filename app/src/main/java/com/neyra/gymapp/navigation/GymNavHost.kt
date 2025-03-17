@@ -46,7 +46,7 @@ import com.neyra.gymapp.ui.exercises.ExerciseDetailsScreen
 import com.neyra.gymapp.ui.exercises.ExerciseListScreen
 import com.neyra.gymapp.ui.home.HomeScreen
 import com.neyra.gymapp.ui.profile.ProfileScreen
-import com.neyra.gymapp.ui.programs.TrainingScreen
+import com.neyra.gymapp.ui.programs.TrainingProgramsScreen
 import com.neyra.gymapp.ui.progress.WorkoutSessionScreen
 import com.neyra.gymapp.ui.scheduling.CalendarView
 import com.neyra.gymapp.ui.workouts.WorkoutExercisesScreen
@@ -183,8 +183,8 @@ fun GymNavHost() {
             composable("home") { HomeScreen() }
             composable("calendar") { CalendarView() }
             composable("trainingPrograms") {
-                TrainingScreen(
-                    onTrainingSelected = { trainingProgramId ->
+                TrainingProgramsScreen(
+                    onProgramSelected = { trainingProgramId ->
                         navController.navigate("trainingPrograms/$trainingProgramId")
                     },
                     onCalendarClicked = { navController.navigate("calendar") }

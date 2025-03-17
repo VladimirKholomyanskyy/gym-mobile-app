@@ -4,7 +4,6 @@ import com.neyra.gymapp.data.entities.ProfileEntity
 import com.neyra.gymapp.data.preferences.UserPreferences
 import com.neyra.gymapp.data.repository.ProfileRepository
 import kotlinx.coroutines.flow.firstOrNull
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,11 +18,11 @@ class ProfileManager @Inject constructor(
         return profileId?.let { profileRepository.getProfile(it) }
     }
 
-    suspend fun setProfileId(profileId: UUID) {
+    suspend fun setProfileId(profileId: String) {
         userPreferences.saveProfileId(profileId)
     }
 
-    suspend fun getCurrentProfileId(): UUID? {
+    suspend fun getCurrentProfileId(): String? {
         return userPreferences.getProfileId()
     }
 }

@@ -8,7 +8,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,16 +24,16 @@ class UserPreferences @Inject constructor(@ApplicationContext context: Context) 
     }
 
     /** Flow that emits the stored profile ID as UUID (nullable if not set) */
-    val profileIdFlow: Flow<UUID?> = dataStore.data
-        .map { preferences -> preferences[PROFILE_ID_KEY]?.let { UUID.fromString(it) } }
+    val profileIdFlow: Flow<String?> = dataStore.data
+        .map { preferences -> preferences[PROFILE_ID_KEY] }
 
     /** Fetch the profile ID as a suspend function (returns null if not found) */
-    suspend fun getProfileId(): UUID? {
+    suspend fun getProfileId(): String? {
         return profileIdFlow.firstOrNull()
     }
 
     /** Save the profile ID as UUID */
-    suspend fun saveProfileId(profileId: UUID) {
+    suspend fun saveProfileId(profileId: String) {
         dataStore.edit { preferences ->
             preferences[PROFILE_ID_KEY] = profileId.toString() // Convert UUID to String
         }
