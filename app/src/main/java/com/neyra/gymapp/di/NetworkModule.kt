@@ -71,13 +71,14 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @AuthenticatedClient
     fun provideApiClient(authInterceptor: Interceptor): ApiClient {
         return ApiClient().addAuthorization("bearerAuth", authInterceptor)
     }
 
     @Provides
     @Singleton
-    fun provideProfilesApi(apiClient: ApiClient): ProfileApi {
+    fun provideProfilesApi(@AuthenticatedClient apiClient: ApiClient): ProfileApi {
         return apiClient.createService(ProfileApi::class.java)
     }
 

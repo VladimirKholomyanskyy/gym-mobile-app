@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -44,7 +43,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.neyra.gymapp.openapi.models.TrainingProgram
 import com.neyra.gymapp.openapi.models.WorkoutResponse
 import com.neyra.gymapp.ui.components.ConfirmationBottomDrawer
 import com.neyra.gymapp.viewmodel.WorkoutsViewModel
@@ -53,7 +51,7 @@ import com.neyra.gymapp.viewmodel.WorkoutsViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkoutsScreen(
-    program: TrainingProgram,
+    trainingProgramId: String,
     onWorkoutSelected: (workout: WorkoutResponse) -> Unit,
     viewModel: WorkoutsViewModel = hiltViewModel()
 ) {

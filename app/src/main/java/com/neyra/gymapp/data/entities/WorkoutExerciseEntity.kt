@@ -3,7 +3,6 @@ package com.neyra.gymapp.data.entities
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
-import java.util.UUID
 
 @Entity(
     tableName = "workout_exercises",
@@ -23,9 +22,9 @@ import java.util.UUID
     ]
 )
 data class WorkoutExerciseEntity(
-    @PrimaryKey val id: UUID,
-    val workoutId: UUID,
-    val exerciseId: UUID,
+    @PrimaryKey val id: String,
+    val workoutId: String,
+    val exerciseId: String,
     val sets: Int,
     val reps: Int,
     val position: Int

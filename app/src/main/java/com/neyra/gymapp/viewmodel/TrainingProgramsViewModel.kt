@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -150,7 +149,7 @@ class TrainingProgramsViewModel @Inject constructor(
         }
     }
 
-    fun updateTrainingProgram(programId: UUID, name: String?, description: String?) {
+    fun updateTrainingProgram(programId: String, name: String?, description: String?) {
         viewModelScope.launch {
             try {
                 val result =
@@ -167,7 +166,7 @@ class TrainingProgramsViewModel @Inject constructor(
         }
     }
 
-    fun deleteTrainingProgram(programId: UUID) {
+    fun deleteTrainingProgram(programId: String) {
         viewModelScope.launch {
             try {
                 val result = trainingProgramRepository.deleteTrainingProgram(programId)

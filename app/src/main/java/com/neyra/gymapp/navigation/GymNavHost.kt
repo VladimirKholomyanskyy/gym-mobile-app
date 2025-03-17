@@ -32,12 +32,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.google.gson.Gson
 import com.neyra.gymapp.data.auth.AuthState
 import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.data.network.NetworkManagerImpl
-import com.neyra.gymapp.openapi.models.TrainingProgram
-import com.neyra.gymapp.openapi.models.WorkoutResponse
 import com.neyra.gymapp.ui.auth.AuthViewModel
 import com.neyra.gymapp.ui.auth.ConfirmSignUpScreen
 import com.neyra.gymapp.ui.auth.ForgotPasswordScreen
@@ -107,7 +104,7 @@ fun GymNavHost() {
     ) { paddingValues ->
         NavHost(
             navController,
-            startDestination = "auth_login",
+            startDestination = "auth/login",
             modifier = Modifier.padding(paddingValues)
         ) {
             // Auth navigation graph
@@ -187,40 +184,37 @@ fun GymNavHost() {
             composable("calendar") { CalendarView() }
             composable("trainingPrograms") {
                 TrainingScreen(
-                    onTrainingSelected = { program ->
-                        val programJson = Gson().toJson(program)
-                        navController.navigate("trainingPrograms/$programJson")
+                    onTrainingSelected = { trainingProgramId ->
+                        navController.navigate("trainingPrograms/$trainingProgramId")
                     },
                     onCalendarClicked = { navController.navigate("calendar") }
                 )
             }
             composable(
-                route = "trainingPrograms/{program}",
-                arguments = listOf(navArgument("program") { type = NavType.StringType })
+                route = "trainingPrograms/{trainingProgramId}",
+                arguments = listOf(navArgument("trainingProgramId") { type = NavType.StringType })
             ) { backStackEntry ->
-                val programString = backStackEntry.arguments?.getString("program") ?: ""
-                val program = Gson().fromJson(programString, TrainingProgram::class.java)
+                val trainingProgramId =
+                    backStackEntry.arguments?.getString("trainingProgramId") ?: ""
                 WorkoutsScreen(
-                    program = program,
-                    onWorkoutSelected = { workout ->
-                        val workoutJson = Gson().toJson(workout)
-                        navController.navigate("workout-exercises/$workoutJson")
+                    trainingProgramId = trainingProgramId,
+                    onWorkoutSelected = { workoutId ->
+                        navController.navigate("workout-exercises/$workoutId")
                     }
                 )
             }
             composable(
-                route = "workout-exercises/{workout}",
-                arguments = listOf(navArgument("workout") { type = NavType.StringType })
+                route = "workout-exercises/{workoutId}",
+                arguments = listOf(navArgument("workoutId") { type = NavType.StringType })
             ) { backStackEntry ->
-                val workoutJson = backStackEntry.arguments?.getString("workout") ?: ""
-                val workout = Gson().fromJson(workoutJson, WorkoutResponse::class.java)
+                val workoutId = backStackEntry.arguments?.getString("workoutId") ?: ""
                 WorkoutExercisesScreen(
-                    workout = workout,
+                    workoutId = workoutId,
                     onWorkoutSelected = { exerciseId ->
                         navController.navigate("exercises/$exerciseId")
                     },
                     onBackPressed = { navController.navigateUp() },
-                    onStartWorkoutSession = { sessionId -> navController.navigate("workout-sessions/$sessionId") }// Handle back navigation
+                    onStartWorkoutSession = { sessionId -> navController.navigate("workout-sessions/$sessionId") }
                 )
             }
             composable(

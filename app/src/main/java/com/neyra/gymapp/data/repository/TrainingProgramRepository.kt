@@ -20,7 +20,7 @@ class TrainingProgramRepository @Inject constructor(
     private val networkManager: NetworkManager
 ) {
 
-    fun getTrainingPrograms(profileId: UUID): Flow<List<TrainingProgramEntity>> =
+    fun getTrainingPrograms(profileId: String): Flow<List<TrainingProgramEntity>> =
         trainingProgramDao.getAllByProfileId(profileId)
 
     fun getPendingSyncPrograms(): Flow<List<TrainingProgramEntity>> =

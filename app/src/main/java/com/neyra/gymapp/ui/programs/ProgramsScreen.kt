@@ -45,14 +45,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.neyra.gymapp.openapi.models.TrainingProgram
+import com.neyra.gymapp.data.entities.TrainingProgramEntity
 import com.neyra.gymapp.ui.components.ConfirmationBottomDrawer
 import com.neyra.gymapp.viewmodel.TrainingProgramsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainingScreen(
-    onTrainingSelected: (program: TrainingProgram) -> Unit,
+    onTrainingSelected: (trainingProgramId: String) -> Unit,
     onCalendarClicked: () -> Unit,
     viewModel: TrainingProgramsViewModel = hiltViewModel()
 ) {
@@ -79,9 +79,11 @@ fun TrainingScreen(
                 CircularProgressIndicator()
             }
         } else {
-            Box(modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -90,7 +92,7 @@ fun TrainingScreen(
                     items(programsState.value) { program ->
                         TrainingProgramCard(
                             program = program,
-                            onClick = { onTrainingSelected(program) },
+                            onClick = { onTrainingSelected(program.id) },
                             onEdit = {
                                 viewModel.setSelectedProgram(program)
                                 viewModel.showUpdateProgramDrawer()
@@ -150,7 +152,7 @@ fun TrainingScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainingProgramCard(
-    program: TrainingProgram,
+    program: TrainingProgramEntity,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -310,7 +312,7 @@ fun CreateTrainingProgramDrawer(
 
 @Composable
 fun UpdateTrainingProgramDrawer(
-    program: TrainingProgram,
+    program: TrainingProgramEntity,
     onCancel: () -> Unit,
     onUpdate: (String?, String?) -> Unit
 ) {
