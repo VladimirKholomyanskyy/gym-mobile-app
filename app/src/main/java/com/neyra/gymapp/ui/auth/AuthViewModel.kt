@@ -15,6 +15,7 @@ class AuthViewModel @Inject constructor(
 ) : ViewModel() {
 
     val authState: StateFlow<AuthState> = authManager.authState
+    val offlineMode: StateFlow<Boolean> = authManager.offlineMode
 
     init {
         viewModelScope.launch {
@@ -100,6 +101,58 @@ class AuthViewModel @Inject constructor(
             } catch (e: Exception) {
                 callback(false, e.message ?: "Sign out failed")
             }
+        }
+    }
+
+    // In AuthViewModel, add:
+    fun forgotPassword(username: String, callback: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val result = authManager.resetPassword(username)
+
+                if (result.isSuccess) {
+                    callback(true, null)
+                } else {
+                    result.exceptionOrNull()?.let {
+                        callback(false, it.message ?: "Password reset failed")
+                    }
+                }
+            } catch (e: Exception) {
+                callback(false, e.message ?: "Password reset failed")
+            }
+        }
+    }
+
+    fun confirmForgotPassword(
+        username: String,
+        newPassword: String,
+        confirmationCode: String,
+        callback: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val result = authManager.confirmResetPassword(
+                    username,
+                    newPassword,
+                    confirmationCode
+                )
+
+                if (result.isSuccess) {
+                    callback(true, null)
+                } else {
+                    result.exceptionOrNull()?.let {
+                        callback(false, it.message ?: "Password reset confirmation failed")
+                    }
+                }
+            } catch (e: Exception) {
+                callback(false, e.message ?: "Password reset confirmation failed")
+            }
+        }
+    }
+
+    fun reconnect() {
+        viewModelScope.launch {
+            authManager.reconnect()
         }
     }
 }

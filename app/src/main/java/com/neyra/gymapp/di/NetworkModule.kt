@@ -41,7 +41,13 @@ object NetworkModule {
         return Interceptor { chain ->
             val original = chain.request()
 
-            val token = runBlocking { authManager.getAuthToken() }
+            // Skip auth for the auth config endpoint
+            if (original.url.toString().contains("/auth/config")) {
+                return@Interceptor chain.proceed(original)
+            }
+
+            // Get a valid token (refreshed if needed)
+            val token = runBlocking { authManager.getValidAuthToken() }
 
             val request = if (token != null) {
                 original.newBuilder()
@@ -49,10 +55,37 @@ object NetworkModule {
                     .method(original.method, original.body)
                     .build()
             } else {
+                // No valid token - proceed without auth header
                 original
             }
 
-            chain.proceed(request)
+            // Process the request
+            val response = chain.proceed(request)
+
+            // Handle 401 Unauthorized errors
+            if (response.code == 401) {
+                response.close()
+
+                // Force token refresh and retry
+                val newToken = runBlocking {
+                    authManager.refreshToken()
+                }
+
+                return@Interceptor if (newToken != null) {
+                    // Retry with new token
+                    chain.proceed(
+                        original.newBuilder()
+                            .header("Authorization", "Bearer $newToken")
+                            .method(original.method, original.body)
+                            .build()
+                    )
+                } else {
+                    // Still no valid token, return the 401 response
+                    response
+                }
+            }
+
+            response
         }
     }
 
