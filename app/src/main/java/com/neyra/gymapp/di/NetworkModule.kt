@@ -59,63 +59,25 @@ object NetworkModule {
                 original
             }
 
-            // Process the request
-            val response = chain.proceed(request)
-
-            // Handle 401 Unauthorized errors
-            if (response.code == 401) {
-                response.close()
-
-                // Force token refresh and retry
-                val newToken = runBlocking {
-                    authManager.refreshToken()
-                }
-
-                return@Interceptor if (newToken != null) {
-                    // Retry with new token
-                    chain.proceed(
-                        original.newBuilder()
-                            .header("Authorization", "Bearer $newToken")
-                            .method(original.method, original.body)
-                            .build()
-                    )
-                } else {
-                    // Still no valid token, return the 401 response
-                    response
-                }
-            }
-
-            response
+            chain.proceed(request)
         }
     }
 
     @Provides
     @Singleton
-    @AuthenticatedClient
-    fun provideAuthenticatedApiClient(authInterceptor: Interceptor): ApiClient {
-        return ApiClient().addAuthorization(
-            authName = "cognito",
-            authorization = authInterceptor
-        )
-    }
-
-    @Provides
-    @Singleton
-    @UnauthenticatedClient
-    fun provideUnauthenticatedApiClient(): ApiClient {
-        return ApiClient()
-    }
-
-    @Provides
-    @Singleton
-    fun provideAuthApi(@UnauthenticatedClient apiClient: ApiClient): AuthApi {
+    fun provideAuthApi(): AuthApi {
         return ApiClient().createService(AuthApi::class.java)
     }
 
     @Provides
     @Singleton
-    fun provideProfilesApi(@AuthenticatedClient apiClient: ApiClient): ProfileApi {
-        // Repeat for other APIs generated from OpenAPI.
+    fun provideApiClient(authInterceptor: Interceptor): ApiClient {
+        return ApiClient().addAuthorization("bearerAuth", authInterceptor)
+    }
+
+    @Provides
+    @Singleton
+    fun provideProfilesApi(apiClient: ApiClient): ProfileApi {
         return apiClient.createService(ProfileApi::class.java)
     }
 

@@ -130,7 +130,7 @@ fun GymNavHost() {
                     SignUpScreen(
                         onNavigateToLogin = {
                             navController.navigate("auth/login") {
-                                popUpTo("auth") { inclusive = false }
+                                popUpTo(0) { inclusive = true }
                             }
                         },
                         onNavigateToConfirmation = { username ->

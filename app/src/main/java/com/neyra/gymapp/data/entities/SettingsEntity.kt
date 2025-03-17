@@ -1,17 +1,25 @@
 package com.neyra.gymapp.data.entities
 
-import android.icu.util.LocaleData
-import android.icu.util.TimeZone
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
-import java.util.UUID
 
-@Entity(tableName = "settings")
+@Entity(
+    tableName = "settings",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProfileEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["profileId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ]
+)
 data class SettingsEntity(
-    @PrimaryKey val id: UUID,
-    val profileId: UUID,
+    @PrimaryKey val id: String,
+    val profileId: String,
     val language: String,
-    val measurementSystem: LocaleData.MeasurementSystem,
-    val timeZone: TimeZone,
-    val notificationEnabled: Boolean,
+    val measurementSystem: String,  // Changed from LocaleData.MeasurementSystem
+    val timeZone: String,  // Changed from TimeZone
+    val notificationEnabled: Boolean
 )

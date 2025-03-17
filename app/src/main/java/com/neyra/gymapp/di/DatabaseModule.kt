@@ -30,6 +30,24 @@ object DatabaseModule {
     fun provideWorkoutDao(database: AppDatabase) = database.workoutDao()
 
     @Provides
+    fun provideWorkoutExerciseDao(database: AppDatabase) = database.workoutExerciseDao()
+
+    @Provides
+    fun provideWorkoutSessionDao(database: AppDatabase) = database.workoutSessionDao()
+
+    @Provides
+    fun provideExerciseLogDao(database: AppDatabase) = database.exerciseLogDao()
+
+    @Provides
+    fun provideScheduledWorkoutDao(database: AppDatabase) = database.scheduledWorkoutDao()
+
+    @Provides
+    fun provideProfileDao(database: AppDatabase) = database.profileDao()
+
+    @Provides
+    fun provideSettingsDao(database: AppDatabase) = database.settingsDao()
+    
+    @Provides
     fun provideExerciseDao(database: AppDatabase) = database.exerciseDao()
 
 

@@ -1,15 +1,25 @@
 package com.neyra.gymapp.data.entities
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
-import java.util.UUID
 
-@Entity(tableName = "training_programs")
+@Entity(
+    tableName = "training_programs",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProfileEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["profileId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ]
+)
 data class TrainingProgramEntity(
-    @PrimaryKey val id: UUID,
+    @PrimaryKey val id: String,
     val name: String,
     val description: String,
-    val profileId: UUID,
+    val profileId: String,
     val syncStatus: SyncStatus = SyncStatus.SYNCED,
     val lastModified: Long = System.currentTimeMillis()
 )

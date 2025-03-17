@@ -24,4 +24,8 @@ class ProfileManager @Inject constructor(
     suspend fun setProfileId(profileId: UUID) {
         userPreferences.saveProfileId(profileId)
     }
+
+    suspend fun getCurrentProfileId(): UUID? {
+        return profileIdFlow.firstOrNull()
+    }
 }
