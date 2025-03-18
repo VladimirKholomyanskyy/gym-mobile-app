@@ -20,21 +20,21 @@ class SyncWorker @AssistedInject constructor(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
             // First sync any pending local changes to the server
-            val syncResult = trainingProgramRepository.syncAllPendingPrograms()
+//            val syncResult = trainingProgramRepository.syncAllPendingPrograms()
 
-            if (syncResult.isFailure) {
-                // If we couldn't sync outgoing changes, retry later
-                return@withContext Result.retry()
-            }
+//            if (syncResult.isFailure) {
+            // If we couldn't sync outgoing changes, retry later
+            return@withContext Result.retry()
+//            }
 
-            // Then refresh data from server
-            val refreshResult = trainingProgramRepository.refreshTrainingPrograms()
-
-            return@withContext if (refreshResult.isSuccess) {
-                Result.success()
-            } else {
-                Result.retry()
-            }
+//            // Then refresh data from server
+//            val refreshResult = trainingProgramRepository.refreshTrainingPrograms()
+//
+//            return@withContext if (refreshResult.isSuccess) {
+//                Result.success()
+//            } else {
+//                Result.retry()
+//            }
         } catch (e: Exception) {
             // Log.e("SyncWorker", "Error during sync: ${e.message}", e)
             Result.retry()

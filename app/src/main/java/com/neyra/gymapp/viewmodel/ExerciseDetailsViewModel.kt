@@ -6,12 +6,13 @@ import com.neyra.gymapp.common.UiState
 import com.neyra.gymapp.openapi.apis.ExerciseLogsApi
 import com.neyra.gymapp.openapi.apis.ExercisesApi
 import com.neyra.gymapp.openapi.models.Exercise
-import com.neyra.gymapp.openapi.models.LogExerciseResponse
-import com.neyra.gymapp.openapi.models.WeightPerDayResponseTotalWeightPerDayInner
+import com.neyra.gymapp.openapi.models.ExerciseLog
+import com.neyra.gymapp.openapi.models.GetWeightPerDayTotalWeightPerDayInner
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -25,18 +26,18 @@ class ExerciseDetailsViewModel @Inject constructor(
 
     // New state for exercise logs
     private val _exerciseLogs =
-        MutableStateFlow<UiState<List<LogExerciseResponse>>>(UiState.Loading)
-    val exerciseLogs: StateFlow<UiState<List<LogExerciseResponse>>> = _exerciseLogs
+        MutableStateFlow<UiState<List<ExerciseLog>>>(UiState.Loading)
+    val exerciseLogs: StateFlow<UiState<List<ExerciseLog>>> = _exerciseLogs
 
     private val _exerciseProgress =
-        MutableStateFlow<UiState<List<WeightPerDayResponseTotalWeightPerDayInner>>>(UiState.Loading)
-    val exerciseProgress: StateFlow<UiState<List<WeightPerDayResponseTotalWeightPerDayInner>>> =
+        MutableStateFlow<UiState<List<GetWeightPerDayTotalWeightPerDayInner>>>(UiState.Loading)
+    val exerciseProgress: StateFlow<UiState<List<GetWeightPerDayTotalWeightPerDayInner>>> =
         _exerciseProgress
 
     fun fetchExercise(exerciseId: String) {
         viewModelScope.launch {
             try {
-                val response = exercisesApi.getExerciseById(exerciseId)
+                val response = exercisesApi.getExerciseById(UUID.fromString(exerciseId))
                 if (response.isSuccessful) {
                     val exercise = response.body()
                     _exercise.value = if (exercise != null) {
@@ -56,9 +57,9 @@ class ExerciseDetailsViewModel @Inject constructor(
     fun fetchExerciseLogs(exerciseId: String, workoutSessionId: String? = null) {
         viewModelScope.launch {
             try {
-                val response = exerciseLogsApi.listExerciseLogs(exerciseId)
+                val response = exerciseLogsApi.listExerciseLogs(UUID.fromString(exerciseId))
                 if (response.isSuccessful) {
-                    val logs = response.body() ?: emptyList()
+                    val logs = response.body()?.items ?: emptyList()
                     _exerciseLogs.value = UiState.Success(logs)
                 } else {
                     _exerciseLogs.value = UiState.Error("Failed to fetch exercise logs")
@@ -72,7 +73,7 @@ class ExerciseDetailsViewModel @Inject constructor(
     fun fetchExerciseProgress(exerciseId: String) {
         viewModelScope.launch {
             try {
-                val response = exerciseLogsApi.getWeightPerDay(exerciseId)
+                val response = exerciseLogsApi.getWeightPerDay(UUID.fromString(exerciseId))
                 if (response.isSuccessful) {
                     val progress = response.body()?.totalWeightPerDay ?: emptyList()
                     _exerciseProgress.value = UiState.Success(progress)

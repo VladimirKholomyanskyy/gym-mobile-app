@@ -5,6 +5,7 @@ import com.neyra.gymapp.domain.model.WorkoutExercise
 import com.neyra.gymapp.domain.repository.TrainingProgramRepository
 import com.neyra.gymapp.domain.repository.WorkoutRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -141,7 +142,7 @@ class UpdateWorkoutExerciseUseCase @Inject constructor(
             list.firstOrNull { it.id == workoutExerciseId }
         }
 
-        val existingExercise = exercises.map { it }.getOrNull()
+        val existingExercise = exercises.firstOrNull { it?.id == workoutExerciseId }
             ?: return Result.failure(IllegalArgumentException("Workout exercise not found"))
 
         // Update only provided fields

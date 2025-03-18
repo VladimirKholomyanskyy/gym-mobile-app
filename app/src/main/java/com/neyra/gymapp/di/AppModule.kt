@@ -2,11 +2,12 @@ package com.neyra.gymapp.di
 
 import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
-import com.neyra.gymapp.data.dao.ProfileDao
+import com.neyra.gymapp.data.dao.TrainingProgramDao
+import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.data.preferences.UserPreferences
-import com.neyra.gymapp.data.repository.ProfileRepository
-import com.neyra.gymapp.domain.ProfileManager
-import com.neyra.gymapp.openapi.apis.ProfileApi
+import com.neyra.gymapp.data.repository.TrainingProgramRepositoryImpl
+import com.neyra.gymapp.domain.repository.TrainingProgramRepository
+import com.neyra.gymapp.openapi.apis.TrainingProgramsApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -28,16 +29,17 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideProfileRepository(api: ProfileApi, dao: ProfileDao): ProfileRepository {
-        return ProfileRepository(api, dao)
+    fun provideTrainingProgramRepository(
+        trainingProgramDao: TrainingProgramDao,
+        trainingProgramsApi: TrainingProgramsApi,
+        networkManager: NetworkManager
+    ): TrainingProgramRepository {
+        return TrainingProgramRepositoryImpl(
+            trainingProgramDao,
+            trainingProgramsApi,
+            networkManager
+        )
     }
 
-    @Provides
-    @Singleton
-    fun provideProfileManager(
-        userPreferences: UserPreferences,
-        profileRepository: ProfileRepository
-    ): ProfileManager {
-        return ProfileManager(userPreferences, profileRepository)
-    }
+
 }

@@ -6,7 +6,6 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "profiles")
 data class ProfileEntity(
     @PrimaryKey val id: String,
-    val externalId: String,
     val sex: String?,  // Will use converter for Sex enum
     val birthday: Long?, // Store as timestamp
     val height: Double?,

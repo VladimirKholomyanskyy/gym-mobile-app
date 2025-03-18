@@ -98,6 +98,8 @@ class AuthManager @Inject constructor(
             }
 
         } catch (e: Exception) {
+            Log.e(TAG, "Error fetching auth config", e)
+        } catch (e: Exception) {
             Log.e(TAG, "Error initializing auth", e)
             handleOfflineInitialization()
         }

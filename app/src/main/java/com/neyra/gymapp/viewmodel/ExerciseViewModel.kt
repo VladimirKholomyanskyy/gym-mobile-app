@@ -24,7 +24,7 @@ class ExerciseViewModel @Inject constructor(
             try {
                 val response = exercisesApi.listExercises()
                 if (response.isSuccessful) {
-                    _exercises.value = UiState.Success(response.body() ?: emptyList())
+                    _exercises.value = UiState.Success(response.body()?.items ?: emptyList())
                 } else {
                     _exercises.value = UiState.Error("Failed to fetch exercises")
                 }

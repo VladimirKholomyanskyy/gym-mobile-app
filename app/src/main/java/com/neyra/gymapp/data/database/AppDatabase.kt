@@ -35,7 +35,8 @@ import com.neyra.gymapp.data.entities.WorkoutSessionEntity
         ExerciseLogEntity::class,
         ScheduledWorkoutEntity::class
     ],
-    version = 1
+    version = 1,
+    exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun profileDao(): ProfileDao

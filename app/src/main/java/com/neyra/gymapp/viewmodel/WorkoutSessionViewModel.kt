@@ -5,13 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.neyra.gymapp.openapi.apis.ExerciseLogsApi
 import com.neyra.gymapp.openapi.apis.WorkoutSessionsApi
-import com.neyra.gymapp.openapi.models.LogExerciseRequest
-import com.neyra.gymapp.openapi.models.WorkoutSessionResponse
+import com.neyra.gymapp.openapi.models.CreateExerciseLogRequest
+import com.neyra.gymapp.openapi.models.WorkoutSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import retrofit2.Response
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -20,8 +21,8 @@ class WorkoutSessionViewModel @Inject constructor(
     private val workoutSessionsApi: WorkoutSessionsApi
 ) : ViewModel() {
 
-    private val _workoutSession = MutableStateFlow<WorkoutSessionResponse?>(null)
-    val workoutSession: StateFlow<WorkoutSessionResponse?> = _workoutSession
+    private val _workoutSession = MutableStateFlow<WorkoutSession?>(null)
+    val workoutSession: StateFlow<WorkoutSession?> = _workoutSession
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
@@ -30,8 +31,8 @@ class WorkoutSessionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _isLoading.value = true
-                val response: Response<WorkoutSessionResponse> =
-                    workoutSessionsApi.getWorkoutSession(sessionId)
+                val response: Response<WorkoutSession> =
+                    workoutSessionsApi.getWorkoutSession(UUID.fromString(sessionId))
                 if (response.isSuccessful) {
                     _workoutSession.value = response.body()
                 } else {
@@ -58,9 +59,9 @@ class WorkoutSessionViewModel @Inject constructor(
                     val weight = setInput.weight.value.toIntOrNull() ?: 0
 
                     // Build your API request.
-                    val request = LogExerciseRequest(
-                        workoutSessionId = sessionId,
-                        exerciseId = exerciseId,
+                    val request = CreateExerciseLogRequest(
+                        workoutSessionId = UUID.fromString(sessionId),
+                        exerciseId = UUID.fromString(exerciseId),
                         setNumber = index + 1,
                         repsCompleted = reps,
                         weightUsed = weight
@@ -75,7 +76,7 @@ class WorkoutSessionViewModel @Inject constructor(
                     }
                 }
             }
-            workoutSessionsApi.completeWorkoutSession(sessionId)
+            workoutSessionsApi.completeWorkoutSession(UUID.fromString(sessionId))
         }
     }
 

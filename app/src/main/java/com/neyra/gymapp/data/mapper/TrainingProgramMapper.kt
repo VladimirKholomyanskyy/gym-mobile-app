@@ -8,9 +8,10 @@ import java.util.UUID
 // Convert entity to API model
 fun TrainingProgramEntity.toModel(): TrainingProgram {
     return TrainingProgram(
-        id = this.id,
+        id = UUID.fromString(this.id),
         name = this.name,
-        description = if (this.description.isEmpty()) null else this.description
+        profileId = UUID.fromString(this.profileId),
+        description = this.description.ifEmpty { "" }
     )
 }
 
@@ -22,10 +23,10 @@ fun List<TrainingProgramEntity>.toModels(): List<TrainingProgram> {
 // Convert API model to entity
 fun TrainingProgram.toEntity(profileId: UUID): TrainingProgramEntity {
     return TrainingProgramEntity(
-        id = this.id,
+        id = this.id.toString(),
         name = this.name,
         description = this.description ?: "",
-        profileId = profileId,
+        profileId = profileId.toString(),
         syncStatus = SyncStatus.SYNCED,
         lastModified = System.currentTimeMillis()
     )

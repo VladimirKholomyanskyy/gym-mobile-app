@@ -5,8 +5,8 @@ import com.neyra.gymapp.openapi.models.Profile
 
 fun Profile.toEntity(): ProfileEntity {
     return ProfileEntity(
-        id = this.id,
-        sex = this.sex,
+        id = this.id.toString(),
+        sex = this.sex.toString(),
         height = this.height,
         weight = this.weight,
         birthday = this.birthday?.toEpochDay(),

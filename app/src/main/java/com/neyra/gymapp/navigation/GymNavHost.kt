@@ -58,14 +58,15 @@ fun GymNavHost() {
     val authViewModel: AuthViewModel = hiltViewModel()
     val authState by authViewModel.authState.collectAsState()
     val offlineMode by authViewModel.offlineMode.collectAsState()
-    val networkManager: NetworkManager = remember { NetworkManagerImpl(LocalContext.current) }
+    val context = LocalContext.current
+    val networkManager: NetworkManager = remember(context) { NetworkManagerImpl(context) }
     // Determine start destination based on auth state
     LaunchedEffect(authState) {
         when (authState) {
             is AuthState.Authenticated -> {
                 // Only navigate if not already on a main screen
                 val currentRoute = navController.currentDestination?.route
-                if (currentRoute == null || currentRoute.startsWith("auth_")) {
+                if (currentRoute == null || currentRoute.startsWith("auth")) {
                     navController.navigate("home") {
                         popUpTo(0) { inclusive = true }
                     }
@@ -75,8 +76,8 @@ fun GymNavHost() {
             is AuthState.Unauthenticated -> {
                 // Only navigate if not already on an auth screen
                 val currentRoute = navController.currentDestination?.route
-                if (currentRoute == null || !currentRoute.startsWith("auth_")) {
-                    navController.navigate("auth_login") {
+                if (currentRoute == null || !currentRoute.startsWith("auth")) {
+                    navController.navigate("login") {
                         popUpTo(0) { inclusive = true }
                     }
                 }
@@ -104,7 +105,7 @@ fun GymNavHost() {
     ) { paddingValues ->
         NavHost(
             navController,
-            startDestination = "auth/login",
+            startDestination = "auth",
             modifier = Modifier.padding(paddingValues)
         ) {
             // Auth navigation graph
@@ -144,7 +145,7 @@ fun GymNavHost() {
                     ConfirmSignUpScreen(
                         username = username,
                         onConfirmationSuccess = {
-                            navController.navigate("auth/login") {
+                            navController.navigate("login") {
                                 popUpTo("auth") { inclusive = false }
                             }
                         }
@@ -154,7 +155,7 @@ fun GymNavHost() {
                 composable("forgot_password") {
                     ForgotPasswordScreen(
                         onNavigateToLogin = {
-                            navController.navigate("auth/login") {
+                            navController.navigate("login") {
                                 popUpTo("auth") { inclusive = false }
                             }
                         },
@@ -172,7 +173,7 @@ fun GymNavHost() {
                     ResetPasswordConfirmationScreen(
                         username = username,
                         onNavigateToLogin = {
-                            navController.navigate("auth/login") {
+                            navController.navigate("login") {
                                 popUpTo("auth") { inclusive = false }
                             }
                         }
@@ -200,7 +201,8 @@ fun GymNavHost() {
                     trainingProgramId = trainingProgramId,
                     onWorkoutSelected = { workoutId ->
                         navController.navigate("workout-exercises/$workoutId")
-                    }
+                    },
+                    onBackPressed = { navController.navigateUp() },
                 )
             }
             composable(
