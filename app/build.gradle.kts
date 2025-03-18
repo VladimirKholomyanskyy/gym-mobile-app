@@ -2,8 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
-    id("com.google.devtools.ksp") // Use KSP instead of kapt
-    id("dagger.hilt.android.plugin") // Apply Hilt plugin
+    alias(libs.plugins.kotlinAndroidKsp)
+    alias(libs.plugins.hiltAndroid)
     id("org.openapi.generator")
 }
 
@@ -45,7 +45,6 @@ android {
 
 composeCompiler {
     reportsDestination = layout.buildDirectory.dir("compose_compiler")
-    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("stability_config.conf"))
 }
 openApiGenerate {
     generatorName.set("kotlin")
@@ -125,4 +124,5 @@ dependencies {
 
     implementation(libs.aws.auth.cognito)
     implementation(libs.core)
+
 }
