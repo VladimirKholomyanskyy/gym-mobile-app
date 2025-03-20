@@ -1,5 +1,6 @@
 package com.neyra.gymapp.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.neyra.gymapp.common.UiState
@@ -22,8 +23,10 @@ class ExerciseViewModel @Inject constructor(
     fun fetchExercises() {
         viewModelScope.launch {
             try {
-                val response = exercisesApi.listExercises()
+                val response = exercisesApi.listExercises(1, 10)
+                Log.d("ExerciseViewModel", "Exercises fetched successfully $response")
                 if (response.isSuccessful) {
+
                     _exercises.value = UiState.Success(response.body()?.items ?: emptyList())
                 } else {
                     _exercises.value = UiState.Error("Failed to fetch exercises")

@@ -1,5 +1,6 @@
 package com.neyra.gymapp.navigation
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,6 +36,7 @@ import androidx.navigation.navArgument
 import com.neyra.gymapp.data.auth.AuthState
 import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.data.network.NetworkManagerImpl
+import com.neyra.gymapp.ui.auth.AuthGuard
 import com.neyra.gymapp.ui.auth.AuthViewModel
 import com.neyra.gymapp.ui.auth.ConfirmSignUpScreen
 import com.neyra.gymapp.ui.auth.ForgotPasswordScreen
@@ -60,24 +62,35 @@ fun GymNavHost() {
     val offlineMode by authViewModel.offlineMode.collectAsState()
     val context = LocalContext.current
     val networkManager: NetworkManager = remember(context) { NetworkManagerImpl(context) }
+
+    // Debug the routes
+    LaunchedEffect(Unit) {
+        navController.addOnDestinationChangedListener { _, destination, _ ->
+            Log.d("Navigation", "Current destination: ${destination.route}")
+        }
+    }
+
     // Determine start destination based on auth state
     LaunchedEffect(authState) {
         when (authState) {
             is AuthState.Authenticated -> {
                 // Only navigate if not already on a main screen
                 val currentRoute = navController.currentDestination?.route
-                if (currentRoute == null || currentRoute.startsWith("auth")) {
-                    navController.navigate("home") {
-                        popUpTo(0) { inclusive = true }
-                    }
+
+                // Check if we're on an auth screen and navigate to main if needed
+
+                navController.navigate("main") {
+                    popUpTo(0) { inclusive = true }
                 }
+
             }
 
             is AuthState.Unauthenticated -> {
                 // Only navigate if not already on an auth screen
+                Log.d("GymNavHost", "Unauthenticated")
                 val currentRoute = navController.currentDestination?.route
                 if (currentRoute == null || !currentRoute.startsWith("auth")) {
-                    navController.navigate("login") {
+                    navController.navigate("auth/login") {
                         popUpTo(0) { inclusive = true }
                     }
                 }
@@ -86,7 +99,8 @@ fun GymNavHost() {
             else -> {}
         }
     }
-// Show an offline banner if in offline mode
+
+    // Show an offline banner if in offline mode
     if (offlineMode) {
         OfflineBanner(
             isNetworkAvailable = networkManager.isOnline(),
@@ -95,6 +109,7 @@ fun GymNavHost() {
             }
         )
     }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = { // Only show bottom nav when authenticated and not in an auth screen
@@ -110,16 +125,17 @@ fun GymNavHost() {
         ) {
             // Auth navigation graph
             navigation(
-                startDestination = "login",
-                route = "auth"
+                route = "auth",
+                startDestination = "login"
+
             ) {
                 composable("login") {
                     LoginScreen(
                         onNavigateToSignUp = {
-                            navController.navigate("auth/signup")
+                            navController.navigate("signup")
                         },
                         onNavigateToForgotPassword = {
-                            navController.navigate("auth/forgot_password")
+                            navController.navigate("forgot_password")
                         }
                     )
                 }
@@ -127,12 +143,12 @@ fun GymNavHost() {
                 composable("signup") {
                     SignUpScreen(
                         onNavigateToLogin = {
-                            navController.navigate("auth/login") {
-                                popUpTo(0) { inclusive = true }
+                            navController.navigate("login") {
+                                popUpTo("auth") { inclusive = true }
                             }
                         },
                         onNavigateToConfirmation = { username ->
-                            navController.navigate("auth/confirm_signup/$username")
+                            navController.navigate("confirm_signup/$username")
                         }
                     )
                 }
@@ -146,7 +162,7 @@ fun GymNavHost() {
                         username = username,
                         onConfirmationSuccess = {
                             navController.navigate("login") {
-                                popUpTo("auth") { inclusive = false }
+                                popUpTo("auth") { inclusive = true }
                             }
                         }
                     )
@@ -156,11 +172,11 @@ fun GymNavHost() {
                     ForgotPasswordScreen(
                         onNavigateToLogin = {
                             navController.navigate("login") {
-                                popUpTo("auth") { inclusive = false }
+                                popUpTo("auth") { inclusive = true }
                             }
                         },
                         onNavigateToResetConfirmation = { username ->
-                            navController.navigate("auth/reset_password/$username")
+                            navController.navigate("reset_password/$username")
                         }
                     )
                 }
@@ -174,69 +190,108 @@ fun GymNavHost() {
                         username = username,
                         onNavigateToLogin = {
                             navController.navigate("login") {
-                                popUpTo("auth") { inclusive = false }
+                                popUpTo("auth") { inclusive = true }
                             }
                         }
                     )
                 }
             }
 
-            composable("home") { HomeScreen() }
-            composable("calendar") { CalendarView() }
-            composable("trainingPrograms") {
-                TrainingProgramsScreen(
-                    onProgramSelected = { trainingProgramId ->
-                        navController.navigate("trainingPrograms/$trainingProgramId")
-                    },
-                    onCalendarClicked = { navController.navigate("calendar") }
-                )
-            }
-            composable(
-                route = "trainingPrograms/{trainingProgramId}",
-                arguments = listOf(navArgument("trainingProgramId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val trainingProgramId =
-                    backStackEntry.arguments?.getString("trainingProgramId") ?: ""
-                WorkoutsScreen(
-                    trainingProgramId = trainingProgramId,
-                    onWorkoutSelected = { workoutId ->
-                        navController.navigate("workout-exercises/$workoutId")
-                    },
-                    onBackPressed = { navController.navigateUp() },
-                )
-            }
-            composable(
-                route = "workout-exercises/{workoutId}",
-                arguments = listOf(navArgument("workoutId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val workoutId = backStackEntry.arguments?.getString("workoutId") ?: ""
-                WorkoutExercisesScreen(
-                    workoutId = workoutId,
-                    onWorkoutSelected = { exerciseId ->
-                        navController.navigate("exercises/$exerciseId")
-                    },
-                    onBackPressed = { navController.navigateUp() },
-                    onStartWorkoutSession = { sessionId -> navController.navigate("workout-sessions/$sessionId") }
-                )
-            }
-            composable(
-                route = "workout-sessions/{sessionId}",
-                arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
-                WorkoutSessionScreen(
-                    sessionId = sessionId,
-                    onBackPressed = { navController.navigateUp() }
-                )
-            }
-            composable("profile") { ProfileScreen() }
-            composable("exercises") {
-                ExerciseListScreen(navController)
-            }
-            composable("exercise_details/{exerciseId}") { backStackEntry ->
-                val exerciseId =
-                    backStackEntry.arguments?.getString("exerciseId") ?: return@composable
-                ExerciseDetailsScreen(exerciseId)
+            // Main app navigation graph
+            navigation(
+                startDestination = "home",
+                route = "main"
+            ) {
+                composable("home") {
+                    AuthGuard { HomeScreen() }
+                }
+
+                composable("calendar") {
+                    AuthGuard { CalendarView() }
+                }
+
+                composable("trainingPrograms") {
+                    AuthGuard {
+                        TrainingProgramsScreen(
+                            onProgramSelected = { trainingProgramId ->
+                                navController.navigate("trainingPrograms/$trainingProgramId")
+                            },
+                            onCalendarClicked = { navController.navigate("calendar") }
+                        )
+                    }
+                }
+
+                composable(
+                    route = "trainingPrograms/{trainingProgramId}",
+                    arguments = listOf(navArgument("trainingProgramId") {
+                        type = NavType.StringType
+                    })
+                ) { backStackEntry ->
+                    val trainingProgramId =
+                        backStackEntry.arguments?.getString("trainingProgramId") ?: ""
+                    AuthGuard {
+                        WorkoutsScreen(
+                            trainingProgramId = trainingProgramId,
+                            onWorkoutSelected = { workoutId ->
+                                navController.navigate("workout-exercises/$workoutId")
+                            },
+                            onBackPressed = { navController.navigateUp() },
+                        )
+                    }
+                }
+
+                composable(
+                    route = "workout-exercises/{workoutId}",
+                    arguments = listOf(navArgument("workoutId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val workoutId = backStackEntry.arguments?.getString("workoutId") ?: ""
+                    AuthGuard {
+                        WorkoutExercisesScreen(
+                            workoutId = workoutId,
+                            onWorkoutSelected = { exerciseId ->
+                                navController.navigate("exercises/$exerciseId")
+                            },
+                            onBackPressed = { navController.navigateUp() },
+                            onStartWorkoutSession = { sessionId ->
+                                navController.navigate("workout-sessions/$sessionId")
+                            }
+                        )
+                    }
+                }
+
+                composable(
+                    route = "workout-sessions/{sessionId}",
+                    arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val sessionId = backStackEntry.arguments?.getString("sessionId") ?: ""
+                    AuthGuard {
+                        WorkoutSessionScreen(
+                            sessionId = sessionId,
+                            onBackPressed = { navController.navigateUp() }
+                        )
+                    }
+                }
+
+                composable("profile") {
+                    AuthGuard { ProfileScreen() }
+                }
+
+                composable("exercises") {
+                    AuthGuard {
+                        ExerciseListScreen(navController = navController)
+                    }
+                }
+
+                composable(
+                    "exercise_details/{exerciseId}",
+                    arguments = listOf(navArgument("exerciseId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val exerciseId =
+                        backStackEntry.arguments?.getString("exerciseId") ?: return@composable
+                    AuthGuard {
+                        ExerciseDetailsScreen(exerciseId)
+                    }
+                }
             }
         }
     }

@@ -28,12 +28,11 @@ class AuthViewModel @Inject constructor(
             try {
                 val result = authManager.signIn(username, password)
 
-                if (result.isSuccess) {
+                result.onSuccess {
+                    // The AuthState will automatically change to Authenticated
                     callback(true, null)
-                } else {
-                    result.exceptionOrNull()?.let {
-                        callback(false, it.message ?: "Sign in failed")
-                    }
+                }.onFailure { error ->
+                    callback(false, error.message ?: "Sign in failed")
                 }
             } catch (e: Exception) {
                 callback(false, e.message ?: "Sign in failed")

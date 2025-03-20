@@ -2,18 +2,23 @@ package com.neyra.gymapp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Background colors
+val BackgroundPrimary = Color(0xFF121212) // Main background
+val BackgroundSecondary = Color(0xFF1E1E24) // Surface/secondary background
+val CardBackground = Color(0xFF000000) // Card background
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Accent colors
+val AccentMagenta = Color(0xFFFF00FF) // Primary accent
+val AccentNeonBlue = Color(0xFF00FFFF) // Secondary accent
+val AccentNeonGreen = Color(0xFF39FF14) // Tertiary accent
+val AccentPurple = Color(0xFFBD00FF) // Highlight accent
 
-val BackgroundPrimary = Color(0xFF000000) // Black
-val BackgroundSecondary = Color(0xFF121212) // Dark Gray
-val AccentMagenta = Color(0xFFFF00FF) // Magenta
-val AccentNeonBlue = Color(0xFF00FFFF) // Neon Blue
-val AccentNeonGreen = Color(0xFF39FF14) // Neon Green
-val TextPrimary = Color(0xFFFFFFFF) // White
-val TextSecondary = Color(0xFFCCCCCC) // Light Gray
+// Text colors
+val TextPrimary = Color(0xFFFFFFFF) // White for primary text
+val TextSecondary = Color(0xFFCCCCCC) // Light gray for secondary text
+val TextDisabled = Color(0xFF777777) // Medium gray for disabled text
+
+// Status colors
+val StatusError = Color(0xFFFF3D47) // Error states
+val StatusSuccess = Color(0xFF39FF14) // Success states (same as tertiary accent)
+val StatusWarning = Color(0xFFFFD500) // Warning states
