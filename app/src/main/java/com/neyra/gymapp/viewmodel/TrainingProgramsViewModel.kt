@@ -27,12 +27,15 @@ class TrainingProgramsViewModel @Inject constructor(
     private val profileManager: ProfileManager
 ) : ViewModel() {
 
+    // Program list state
     private val _programs = MutableStateFlow<UiState<List<TrainingProgram>>>(UiState.Loading)
     val programs: StateFlow<UiState<List<TrainingProgram>>> = _programs.asStateFlow()
 
+    // Selected program for edit/delete operations
     private val _selectedProgram = MutableStateFlow<TrainingProgram?>(null)
     val selectedProgram: StateFlow<TrainingProgram?> = _selectedProgram.asStateFlow()
 
+    // UI state for drawers
     private val _isCreateProgramDrawerVisible = MutableStateFlow(false)
     val isCreateProgramDrawerVisible: StateFlow<Boolean> =
         _isCreateProgramDrawerVisible.asStateFlow()
@@ -41,6 +44,10 @@ class TrainingProgramsViewModel @Inject constructor(
     val isUpdateProgramDrawerVisible: StateFlow<Boolean> =
         _isUpdateProgramDrawerVisible.asStateFlow()
 
+    private val _isDeleteConfirmationVisible = MutableStateFlow(false)
+    val isDeleteConfirmationVisible: StateFlow<Boolean> = _isDeleteConfirmationVisible.asStateFlow()
+
+    // Loading and error states
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -54,20 +61,18 @@ class TrainingProgramsViewModel @Inject constructor(
     fun fetchTrainingPrograms() {
         viewModelScope.launch {
             _isLoading.value = true
+            _programs.value = UiState.Loading
             try {
-                // Assuming you have a way to get the current profile ID
-                val profileId = profileManager.getCurrentProfileId()
+                val profileId = profileManager.getCurrentProfileId() ?: return@launch
 
-                if (profileId != null) {
-                    getTrainingProgramsUseCase(profileId)
-                        .catch { exception ->
-                            handleError(exception)
-                        }
-                        .collect { programs ->
-                            _programs.value = UiState.Success(programs)
-                            _isLoading.value = false
-                        }
-                }
+                getTrainingProgramsUseCase(profileId)
+                    .catch { exception ->
+                        handleError(exception)
+                    }
+                    .collect { programs ->
+                        _programs.value = UiState.Success(programs)
+                        _isLoading.value = false
+                    }
             } catch (e: Exception) {
                 handleError(e)
             }
@@ -78,16 +83,27 @@ class TrainingProgramsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val profileId = profileManager.getCurrentProfileId()
-                val result = profileId?.let { createUseCase(it, name, description) }
+                val profileId = profileManager.getCurrentProfileId() ?: run {
+                    _errorMessage.value = "User profile not found"
+                    _isLoading.value = false
+                    return@launch
+                }
 
-                if (result != null) {
-                    result.onSuccess {
-                        _isCreateProgramDrawerVisible.value = false
-                        fetchTrainingPrograms() // Refresh the list
-                    }.onFailure { error ->
-                        handleError(error)
+                // Validate input on viewmodel level for better UX
+                validateProgramInput(name, description)
+                    ?.let { error ->
+                        _errorMessage.value = error
+                        _isLoading.value = false
+                        return@launch
                     }
+
+                val result = createUseCase(profileId, name, description)
+
+                result.onSuccess {
+                    _isCreateProgramDrawerVisible.value = false
+                    refreshProgramsList()
+                }.onFailure { error ->
+                    handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
@@ -105,11 +121,20 @@ class TrainingProgramsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                // Validate input on viewmodel level
+                name?.let {
+                    validateProgramInput(it, description)
+                        ?.let { error ->
+                            _errorMessage.value = error
+                            _isLoading.value = false
+                            return@launch
+                        }
+                }
                 val result = updateUseCase(programId, name, description)
 
                 result.onSuccess {
                     _isUpdateProgramDrawerVisible.value = false
-                    fetchTrainingPrograms() // Refresh the list
+                    refreshProgramsList()
                 }.onFailure { error ->
                     handleError(error)
                 }
@@ -128,7 +153,8 @@ class TrainingProgramsViewModel @Inject constructor(
                 val result = deleteUseCase(programId)
 
                 result.onSuccess {
-                    fetchTrainingPrograms() // Refresh the list
+                    _isDeleteConfirmationVisible.value = false
+                    refreshProgramsList()
                 }.onFailure { error ->
                     handleError(error)
                 }
@@ -140,6 +166,29 @@ class TrainingProgramsViewModel @Inject constructor(
         }
     }
 
+    // Helper function for validating program inputs
+    private fun validateProgramInput(name: String, description: String?): String? {
+        if (name.isBlank()) {
+            return "Program name cannot be empty"
+        }
+
+        if (name.length > TrainingProgram.MAX_NAME_LENGTH) {
+            return "Name must be ${TrainingProgram.MAX_NAME_LENGTH} characters or less"
+        }
+
+        if (description != null && description.length > TrainingProgram.MAX_DESCRIPTION_LENGTH) {
+            return "Description must be ${TrainingProgram.MAX_DESCRIPTION_LENGTH} characters or less"
+        }
+
+        return null
+    }
+
+    // Helper function to refresh programs list after changes
+    private fun refreshProgramsList() {
+        fetchTrainingPrograms()
+    }
+
+    // Dialog and drawer state management
     fun setSelectedProgram(program: TrainingProgram) {
         _selectedProgram.value = program
     }
@@ -160,17 +209,41 @@ class TrainingProgramsViewModel @Inject constructor(
         _isUpdateProgramDrawerVisible.value = false
     }
 
+    fun showDeleteConfirmation() {
+        _isDeleteConfirmationVisible.value = true
+    }
+
+    fun hideDeleteConfirmation() {
+        _isDeleteConfirmationVisible.value = false
+    }
+
+    fun clearErrorMessage() {
+        _errorMessage.value = null
+    }
+
     private fun handleError(error: Throwable) {
         _isLoading.value = false
         val errorMessage = when (error) {
             is DomainError.ValidationError.InvalidName ->
                 "Invalid program name: ${error.message}"
 
+            is DomainError.ValidationError.InvalidDescription ->
+                "Invalid description: ${error.message}"
+
+            is DomainError.ValidationError.WorkoutLimitExceeded ->
+                "You've reached the maximum number of workouts for this program"
+
             is DomainError.NetworkError.NoConnection ->
                 "No internet connection. Please check your network."
 
             is DomainError.AuthenticationError.Unauthorized ->
                 "You are not authorized. Please log in again."
+
+            is DomainError.DataError.NotFound ->
+                "The requested program was not found"
+
+            is DomainError.DataError.DuplicateEntry ->
+                "A program with this name already exists"
 
             is DomainError ->
                 error.message
@@ -179,8 +252,10 @@ class TrainingProgramsViewModel @Inject constructor(
                 "An unexpected error occurred: ${error.message}"
         }
         _errorMessage.value = errorMessage
-        _programs.value = UiState.Error(errorMessage)
+        _programs.value = when (_programs.value) {
+            is UiState.Loading -> UiState.Error(errorMessage)
+            is UiState.Success -> _programs.value // Keep current data but show error in snackbar
+            is UiState.Error -> UiState.Error(errorMessage)
+        }
     }
-
-
 }

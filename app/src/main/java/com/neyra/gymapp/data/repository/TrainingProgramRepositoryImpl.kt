@@ -5,7 +5,6 @@ import com.neyra.gymapp.data.entities.SyncStatus
 import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.domain.mapper.toDomain
 import com.neyra.gymapp.domain.mapper.toEntity
-import com.neyra.gymapp.domain.mapper.updateEntity
 import com.neyra.gymapp.domain.model.TrainingProgram
 import com.neyra.gymapp.domain.repository.TrainingProgramRepository
 import com.neyra.gymapp.openapi.apis.TrainingProgramsApi
@@ -62,40 +61,44 @@ class TrainingProgramRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun updateTrainingProgram(
-        programId: String,
-        program: TrainingProgram
+    override suspend fun updateFields(
+        id: String,
+        name: String?,
+        description: String?
     ): Result<TrainingProgram> {
         return try {
-            // Fetch existing entity
-            val existingEntity = trainingProgramDao.getById(programId)
-                ?: throw IllegalArgumentException("Program not found")
+            // Determine which update method to call based on provided parameters
+            val rowsUpdated = when {
+                name != null && description != null ->
+                    trainingProgramDao.updateNameAndDescription(id, name, description)
 
-            // Update entity
-            val updatedEntity = program.updateEntity(existingEntity, programId)
-            trainingProgramDao.insert(updatedEntity)
+                name != null ->
+                    trainingProgramDao.updateName(id, name)
 
-            // If online, attempt to sync
-            if (networkManager.isOnline()) {
-                val apiResponse = trainingProgramsApi.updateTrainingProgram(
-                    UUID.fromString(programId),
-                    com.neyra.gymapp.openapi.models.PatchTrainingProgramRequest(
-                        name = program.name,
-                        description = program.description
-                    )
-                )
+                description != null ->
+                    trainingProgramDao.updateDescription(id, description)
 
-                if (apiResponse.isSuccessful) {
-                    // Mark as synced
-                    trainingProgramDao.updateSyncStatus(
-                        programId,
-                        SyncStatus.SYNCED
-                    )
-                }
+                else -> 0 // No fields to update
             }
 
-            // Return updated domain model
-            Result.success(program.copy(id = programId))
+            if (rowsUpdated > 0) {
+                // Fetch and return the updated entity
+                val updatedProgram = trainingProgramDao.getById(id)
+                    ?: return Result.failure(Exception("Training program not found after update"))
+                if (networkManager.isOnline()) {
+                    val apiResponse = trainingProgramsApi.updateTrainingProgram(
+                        UUID.fromString(id),
+                        com.neyra.gymapp.openapi.models.PatchTrainingProgramRequest(
+                            name = updatedProgram.name,
+                            description = updatedProgram.description
+                        )
+                    )
+
+                }
+                Result.success(updatedProgram.toDomain())
+            } else {
+                Result.failure(Exception("No rows updated. Training program may not exist."))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -133,7 +136,7 @@ class TrainingProgramRepositoryImpl @Inject constructor(
     override suspend fun getTrainingProgram(programId: String): TrainingProgram? {
         return trainingProgramDao.getById(programId)?.toDomain()
     }
-    
+
 
     override fun getTrainingPrograms(
         profileId: String,

@@ -54,24 +54,14 @@ class UpdateTrainingProgramUseCase @Inject constructor(
     ): Result<TrainingProgram> {
         return try {
             // Fetch existing program to validate updates
-            val existingProgram = repository.getTrainingProgram(programId)
+            repository.getTrainingProgram(programId)
                 ?: throw IllegalArgumentException("Program not found")
 
-            // Create updated domain model
-            val updatedProgram = existingProgram.let { current ->
-                current.copy(
-                    name = name ?: current.name,
-                    description = description ?: current.description
-                )
-            }
-
             // Update via repository
-            val result = repository.updateTrainingProgram(
+            val result = repository.updateFields(
                 programId,
-                TrainingProgram(
-                    name = updatedProgram.name,
-                    description = updatedProgram.description
-                )
+                name,
+                description
             )
 
             // Map result back to domain model

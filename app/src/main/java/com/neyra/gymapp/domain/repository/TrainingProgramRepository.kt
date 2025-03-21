@@ -25,16 +25,11 @@ interface TrainingProgramRepository {
         program: TrainingProgram
     ): Result<TrainingProgram>
 
-    /**
-     * Update an existing training program
-     *
-     * @param programId ID of the program to update
-     * @param program Updated training program details
-     * @return Result containing the updated training program
-     */
-    suspend fun updateTrainingProgram(
-        programId: String,
-        program: TrainingProgram
+
+    suspend fun updateFields(
+        id: String,
+        name: String? = null,
+        description: String? = null
     ): Result<TrainingProgram>
 
     /**
