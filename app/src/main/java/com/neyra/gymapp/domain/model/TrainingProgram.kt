@@ -1,7 +1,5 @@
 package com.neyra.gymapp.domain.model
 
-import java.time.Instant
-
 /**
  * Domain model representing a Training Program
  *
@@ -14,7 +12,6 @@ data class TrainingProgram(
     val id: String? = null,  // Optional for new programs
     val name: String,
     val description: String? = null,
-    val createdAt: Instant? = null,
     val workoutCount: Int = 0
 ) {
     // Initialization block for validation

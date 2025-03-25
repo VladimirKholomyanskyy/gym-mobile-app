@@ -18,8 +18,9 @@ fun WorkoutEntity.toDomain(exercises: List<WorkoutExercise> = emptyList()): Work
         trainingProgramId = this.trainingProgramId,
         name = this.name,
         position = this.position,
-        exercises = exercises
-    )
+        exercises = exercises,
+
+        )
 }
 
 /**

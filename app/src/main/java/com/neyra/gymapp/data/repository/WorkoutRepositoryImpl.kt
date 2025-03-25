@@ -3,6 +3,7 @@ package com.neyra.gymapp.data.repository
 import com.neyra.gymapp.data.dao.ExerciseDao
 import com.neyra.gymapp.data.dao.WorkoutDao
 import com.neyra.gymapp.data.dao.WorkoutExerciseDao
+import com.neyra.gymapp.data.entities.SyncStatus
 import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.domain.mapper.toDomain
 import com.neyra.gymapp.domain.mapper.toDomainExerciseList
@@ -69,26 +70,35 @@ class WorkoutRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun updateWorkout(workoutId: String, workout: Workout): Result<Workout> {
+    override suspend fun updateWorkout(workoutId: String, newName: String): Result<Workout> {
         return try {
-            // Update locally
-            workoutDao.update(workoutId, workout.name)
-
-            // If online, sync with server
-            if (networkManager.isOnline()) {
-                val request = PatchWorkoutRequest(name = workout.name)
-                workoutsApi.updateWorkout(
-                    UUID.fromString(workout.trainingProgramId),
-                    UUID.fromString(workoutId),
-                    request
+            val rowsUpdated = workoutDao.updateName(
+                workoutId, newName,
+                SyncStatus.PENDING_UPDATE,
+                System.currentTimeMillis()
+            )
+            if (rowsUpdated > 0) {
+                // Fetch and return the updated entity
+                val updatedWorkout = workoutDao.getWorkoutById(workoutId) ?: return Result.failure(
+                    Exception("Workout not found after update")
                 )
+                if (networkManager.isOnline()) {
+                    val response = workoutsApi.updateWorkout(
+                        UUID.fromString(updatedWorkout.trainingProgramId),
+                        UUID.fromString(workoutId),
+                        PatchWorkoutRequest(name = updatedWorkout.name)
+                    )
+
+                    if (response.isSuccessful) {
+                        // Mark as synced
+                        workoutDao.updateSyncStatus(workoutId, SyncStatus.SYNCED)
+                    }
+
+                }
+                Result.success(updatedWorkout.toDomain())
+            } else {
+                Result.failure(Exception("No rows updated. Training program may not exist."))
             }
-
-            // Return updated workout
-            val updatedWorkout = workoutDao.getWorkoutById(workoutId)?.toDomain()
-                ?: return Result.failure(IllegalStateException("Failed to retrieve updated workout"))
-
-            Result.success(updatedWorkout)
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -20,10 +20,10 @@ interface WorkoutRepository {
      * Update an existing workout
      *
      * @param workoutId ID of the workout to update
-     * @param workout Updated workout details
+     * @param newName Updated name
      * @return Result containing the updated workout
      */
-    suspend fun updateWorkout(workoutId: String, workout: Workout): Result<Workout>
+    suspend fun updateWorkout(workoutId: String, newName: String): Result<Workout>
 
     /**
      * Delete a workout

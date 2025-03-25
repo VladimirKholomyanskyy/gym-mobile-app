@@ -22,6 +22,9 @@ data class TrainingProgramEntity(
     val name: String,
     val description: String,
     val profileId: String,
+    val localCreatedAt: Long,
+    val localUpdatedAt: Long,
+    val serverCreatedAt: Long?,
+    val serverUpdatedAt: Long?,
     val syncStatus: SyncStatus = SyncStatus.SYNCED,
-    val lastModified: Long = System.currentTimeMillis()
 )

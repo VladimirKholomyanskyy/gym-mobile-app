@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.neyra.gymapp.data.entities.SyncStatus
 import com.neyra.gymapp.data.entities.WorkoutEntity
 import com.neyra.gymapp.data.entities.WorkoutExerciseEntity
 import kotlinx.coroutines.flow.Flow
@@ -30,8 +31,16 @@ interface WorkoutDao {
     @Query("SELECT COUNT(*) FROM workouts WHERE trainingProgramId = :trainingProgramId")
     suspend fun countByTrainingProgramId(trainingProgramId: String): Int
 
-    @Query("UPDATE workouts SET name = :name WHERE id = :id")
-    suspend fun update(id: String, name: String)
+    @Query("UPDATE workouts SET name = :name, syncStatus = :syncStatus, lastModified = :lastModified WHERE id = :id")
+    suspend fun updateName(
+        id: String,
+        name: String,
+        syncStatus: SyncStatus,
+        lastModified: Long
+    ): Int
+
+    @Query("UPDATE workouts SET syncStatus = :status WHERE id = :id")
+    suspend fun updateSyncStatus(id: String, status: SyncStatus)
 
     @Query("UPDATE workouts SET position = :position WHERE id = :id")
     suspend fun updatePosition(id: String, position: Int)

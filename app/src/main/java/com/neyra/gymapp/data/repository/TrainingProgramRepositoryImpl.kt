@@ -8,6 +8,8 @@ import com.neyra.gymapp.domain.mapper.toEntity
 import com.neyra.gymapp.domain.model.TrainingProgram
 import com.neyra.gymapp.domain.repository.TrainingProgramRepository
 import com.neyra.gymapp.openapi.apis.TrainingProgramsApi
+import com.neyra.gymapp.openapi.models.CreateTrainingProgramRequest
+import com.neyra.gymapp.openapi.models.PatchTrainingProgramRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
@@ -34,23 +36,22 @@ class TrainingProgramRepositoryImpl @Inject constructor(
 
             // If online, attempt to sync
             if (networkManager.isOnline()) {
-                val apiResponse = trainingProgramsApi.createTrainingProgram(
-                    com.neyra.gymapp.openapi.models.CreateTrainingProgramRequest(
+                val response = trainingProgramsApi.createTrainingProgram(
+                    CreateTrainingProgramRequest(
                         name = program.name,
                         description = program.description
                     )
                 )
 
-                if (apiResponse.isSuccessful) {
+                if (response.isSuccessful && response.body() != null) {
                     // Update local entity with server response
-                    apiResponse.body()?.let { serverProgram ->
-                        trainingProgramDao.updateIdAndSyncStatus(
-                            oldId = programEntity.id,
-                            newId = serverProgram.id.toString(),
-                            syncStatus = SyncStatus.SYNCED,
-                            lastModified = System.currentTimeMillis()
-                        )
-                    }
+                    trainingProgramDao.updateIdAndSyncStatus(
+                        programEntity.id,
+                        response.body()!!.id.toString(),
+                        SyncStatus.SYNCED,
+                        response.body()!!.createdAt.toInstant().toEpochMilli(),
+                        response.body()!!.updatedAt.toInstant().toEpochMilli()
+                    )
                 }
             }
 
@@ -70,13 +71,29 @@ class TrainingProgramRepositoryImpl @Inject constructor(
             // Determine which update method to call based on provided parameters
             val rowsUpdated = when {
                 name != null && description != null ->
-                    trainingProgramDao.updateNameAndDescription(id, name, description)
+                    trainingProgramDao.updateNameAndDescription(
+                        id,
+                        name,
+                        description,
+                        SyncStatus.PENDING_UPDATE,
+                        System.currentTimeMillis()
+                    )
 
                 name != null ->
-                    trainingProgramDao.updateName(id, name)
+                    trainingProgramDao.updateName(
+                        id,
+                        name,
+                        SyncStatus.PENDING_UPDATE,
+                        System.currentTimeMillis()
+                    )
 
                 description != null ->
-                    trainingProgramDao.updateDescription(id, description)
+                    trainingProgramDao.updateDescription(
+                        id,
+                        description,
+                        SyncStatus.PENDING_UPDATE,
+                        System.currentTimeMillis()
+                    )
 
                 else -> 0 // No fields to update
             }
@@ -86,13 +103,20 @@ class TrainingProgramRepositoryImpl @Inject constructor(
                 val updatedProgram = trainingProgramDao.getById(id)
                     ?: return Result.failure(Exception("Training program not found after update"))
                 if (networkManager.isOnline()) {
-                    val apiResponse = trainingProgramsApi.updateTrainingProgram(
+                    val response = trainingProgramsApi.updateTrainingProgram(
                         UUID.fromString(id),
-                        com.neyra.gymapp.openapi.models.PatchTrainingProgramRequest(
+                        PatchTrainingProgramRequest(
                             name = updatedProgram.name,
                             description = updatedProgram.description
                         )
                     )
+                    if (response.isSuccessful && response.body() != null) {
+                        // Mark as synced
+                        trainingProgramDao.updateSyncStatus(
+                            id, SyncStatus.SYNCED,
+                            response.body()!!.updatedAt.toInstant().toEpochMilli()
+                        )
+                    }
 
                 }
                 Result.success(updatedProgram.toDomain())
@@ -165,7 +189,7 @@ class TrainingProgramRepositoryImpl @Inject constructor(
                         // Sort based on criteria
                         when (sortBy) {
                             TrainingProgramRepository.SortCriteria.CREATED_DATE ->
-                                filteredPrograms.sortedByDescending { it.createdAt }
+                                filteredPrograms.sortedByDescending { it.name }
 
                             TrainingProgramRepository.SortCriteria.NAME ->
                                 filteredPrograms.sortedBy { it.name }
@@ -181,64 +205,9 @@ class TrainingProgramRepositoryImpl @Inject constructor(
             }
     }
 
-    override suspend fun countTrainingPrograms(profileId: String): Int {
-        return trainingProgramDao.countByProfileId(profileId)
-    }
 
     override suspend fun trainingProgramExists(programId: String): Boolean {
-        return trainingProgramDao.getById(programId.toString()) != null
+        return trainingProgramDao.getById(programId) != null
     }
 
-    override suspend fun syncTrainingPrograms(profileId: String): Result<Int> {
-        return try {
-            // Fetch pending sync items
-            val pendingPrograms = trainingProgramDao.getAllWithSyncStatusSync(
-                SyncStatus.PENDING_CREATE,
-                SyncStatus.PENDING_UPDATE,
-                SyncStatus.PENDING_DELETE
-            )
-
-            var syncedCount = 0
-            pendingPrograms.forEach { program ->
-                try {
-                    when (program.syncStatus) {
-                        SyncStatus.PENDING_CREATE -> {
-                            val apiResponse = trainingProgramsApi.createTrainingProgram(
-                                com.neyra.gymapp.openapi.models.CreateTrainingProgramRequest(
-                                    name = program.name,
-                                    description = program.description.ifEmpty { null }
-                                )
-                            )
-                            if (apiResponse.isSuccessful) syncedCount++
-                        }
-
-                        SyncStatus.PENDING_UPDATE -> {
-                            val apiResponse = trainingProgramsApi.updateTrainingProgram(
-                                UUID.fromString(program.id),
-                                com.neyra.gymapp.openapi.models.PatchTrainingProgramRequest(
-                                    name = program.name,
-                                    description = program.description.ifEmpty { null }
-                                )
-                            )
-                            if (apiResponse.isSuccessful) syncedCount++
-                        }
-
-                        SyncStatus.PENDING_DELETE -> {
-                            val apiResponse =
-                                trainingProgramsApi.deleteTrainingProgram(UUID.fromString(program.id))
-                            if (apiResponse.isSuccessful) syncedCount++
-                        }
-
-                        else -> {} // No action for already synced items
-                    }
-                } catch (e: Exception) {
-                    // Log error but continue with other items
-                }
-            }
-
-            Result.success(syncedCount)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
 }

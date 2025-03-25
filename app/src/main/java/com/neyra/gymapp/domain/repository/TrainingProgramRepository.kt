@@ -65,13 +65,6 @@ interface TrainingProgramRepository {
         limit: Int? = null
     ): Flow<List<TrainingProgram>>
 
-    /**
-     * Count the number of training programs for a profile
-     *
-     * @param profileId ID of the profile
-     * @return Number of training programs
-     */
-    suspend fun countTrainingPrograms(profileId: String): Int
 
     /**
      * Check if a training program exists
@@ -80,14 +73,6 @@ interface TrainingProgramRepository {
      * @return Boolean indicating existence
      */
     suspend fun trainingProgramExists(programId: String): Boolean
-
-    /**
-     * Synchronize training programs with remote data source
-     *
-     * @param profileId ID of the profile
-     * @return Result of synchronization
-     */
-    suspend fun syncTrainingPrograms(profileId: String): Result<Int>
 
     /**
      * Sorting criteria for training programs

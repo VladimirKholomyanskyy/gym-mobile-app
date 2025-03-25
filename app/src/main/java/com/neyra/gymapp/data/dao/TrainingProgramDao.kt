@@ -26,26 +26,71 @@ interface TrainingProgramDao {
     suspend fun insertAll(programs: List<TrainingProgramEntity>)
 
     // Update only the name
-    @Query("UPDATE training_programs SET name = :name WHERE id = :id")
-    suspend fun updateName(id: String, name: String): Int
+    @Query("UPDATE training_programs SET name = :name, syncStatus = :syncStatus, localUpdatedAt = :localUpdatedAt WHERE id = :id")
+    suspend fun updateName(
+        id: String,
+        name: String,
+        syncStatus: SyncStatus,
+        localUpdatedAt: Long
+    ): Int
 
     // Update only the description
-    @Query("UPDATE training_programs SET description = :description WHERE id = :id")
-    suspend fun updateDescription(id: String, description: String): Int
+    @Query("UPDATE training_programs SET description = :description, syncStatus = :syncStatus, localUpdatedAt = :localUpdatedAt WHERE id = :id")
+    suspend fun updateDescription(
+        id: String,
+        description: String,
+        syncStatus: SyncStatus,
+        localUpdatedAt: Long
+    ): Int
 
     // The original method that updates both fields
-    @Query("UPDATE training_programs SET name = :name, description = :description WHERE id = :id")
-    suspend fun updateNameAndDescription(id: String, name: String, description: String): Int
+    @Query(
+        """
+        UPDATE training_programs
+        SET
+            name = :name,
+            description = :description,
+            syncStatus = :syncStatus,
+            localUpdatedAt = :localUpdatedAt
+        WHERE id = :id"""
+    )
+    suspend fun updateNameAndDescription(
+        id: String,
+        name: String,
+        description: String,
+        syncStatus: SyncStatus,
+        localUpdatedAt: Long
+    ): Int
+
+    @Query(
+        """
+        UPDATE training_programs 
+        SET serverCreatedAt = :serverCreatedAt, 
+            serverUpdatedAt = :serverUpdatedAt,
+            syncStatus = :syncStatus
+        WHERE id = :id
+    """
+    )
+    suspend fun updateServerTimestamps(
+        id: String,
+        serverCreatedAt: Long?,
+        serverUpdatedAt: Long?,
+        syncStatus: SyncStatus
+    )
+
+    @Query("UPDATE training_programs SET syncStatus = :status, serverUpdatedAt = :serverUpdatedAt WHERE id = :id")
+    suspend fun updateSyncStatus(id: String, status: SyncStatus, serverUpdatedAt: Long)
 
     @Query("UPDATE training_programs SET syncStatus = :status WHERE id = :id")
     suspend fun updateSyncStatus(id: String, status: SyncStatus)
 
-    @Query("UPDATE training_programs SET id = :newId, syncStatus = :syncStatus, lastModified = :lastModified WHERE id = :oldId")
+    @Query("UPDATE training_programs SET id = :newId, syncStatus = :syncStatus,serverCreatedAt = :serverCreatedAt, serverUpdatedAt = :serverUpdatedAt WHERE id = :oldId")
     suspend fun updateIdAndSyncStatus(
         oldId: String,
         newId: String,
         syncStatus: SyncStatus,
-        lastModified: Long
+        serverCreatedAt: Long,
+        serverUpdatedAt: Long
     )
 
     @Query("SELECT * FROM training_programs WHERE id = :id")
