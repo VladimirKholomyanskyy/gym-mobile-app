@@ -13,6 +13,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     defaultConfig {
@@ -124,5 +125,7 @@ dependencies {
 
     implementation(libs.aws.auth.cognito)
     implementation(libs.core)
+
+    implementation(libs.timber)
 
 }

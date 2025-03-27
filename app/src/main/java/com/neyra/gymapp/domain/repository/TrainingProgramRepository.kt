@@ -60,7 +60,7 @@ interface TrainingProgramRepository {
      */
     fun getTrainingPrograms(
         profileId: String,
-        sortBy: SortCriteria = SortCriteria.CREATED_DATE,
+        sortBy: SortCriteria = SortCriteria.NAME,
         filterBy: FilterCriteria? = null,
         limit: Int? = null
     ): Flow<List<TrainingProgram>>
@@ -78,7 +78,6 @@ interface TrainingProgramRepository {
      * Sorting criteria for training programs
      */
     enum class SortCriteria {
-        CREATED_DATE,
         NAME,
         WORKOUT_COUNT
     }
@@ -99,5 +98,5 @@ interface TrainingProgramRepository {
  */
 fun TrainingProgramRepository.getTrainingPrograms(
     profileId: String,
-    sortBy: TrainingProgramRepository.SortCriteria = TrainingProgramRepository.SortCriteria.CREATED_DATE
+    sortBy: TrainingProgramRepository.SortCriteria = TrainingProgramRepository.SortCriteria.NAME
 ): Flow<List<TrainingProgram>> = getTrainingPrograms(profileId, sortBy)

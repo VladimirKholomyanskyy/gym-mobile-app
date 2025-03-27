@@ -30,8 +30,8 @@ interface TrainingProgramDao {
     suspend fun updateName(
         id: String,
         name: String,
-        syncStatus: SyncStatus,
-        localUpdatedAt: Long
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE,
+        localUpdatedAt: Long = System.currentTimeMillis()
     ): Int
 
     // Update only the description
@@ -39,8 +39,8 @@ interface TrainingProgramDao {
     suspend fun updateDescription(
         id: String,
         description: String,
-        syncStatus: SyncStatus,
-        localUpdatedAt: Long
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE,
+        localUpdatedAt: Long = System.currentTimeMillis()
     ): Int
 
     // The original method that updates both fields
@@ -58,25 +58,10 @@ interface TrainingProgramDao {
         id: String,
         name: String,
         description: String,
-        syncStatus: SyncStatus,
-        localUpdatedAt: Long
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE,
+        localUpdatedAt: Long = System.currentTimeMillis()
     ): Int
 
-    @Query(
-        """
-        UPDATE training_programs 
-        SET serverCreatedAt = :serverCreatedAt, 
-            serverUpdatedAt = :serverUpdatedAt,
-            syncStatus = :syncStatus
-        WHERE id = :id
-    """
-    )
-    suspend fun updateServerTimestamps(
-        id: String,
-        serverCreatedAt: Long?,
-        serverUpdatedAt: Long?,
-        syncStatus: SyncStatus
-    )
 
     @Query("UPDATE training_programs SET syncStatus = :status, serverUpdatedAt = :serverUpdatedAt WHERE id = :id")
     suspend fun updateSyncStatus(id: String, status: SyncStatus, serverUpdatedAt: Long)
@@ -100,6 +85,4 @@ interface TrainingProgramDao {
     @Query("DELETE FROM training_programs WHERE id = :id")
     suspend fun delete(id: String)
 
-    @Query("SELECT COUNT(*) FROM training_programs WHERE profileId = :profileId")
-    suspend fun countByProfileId(profileId: String): Int
 }

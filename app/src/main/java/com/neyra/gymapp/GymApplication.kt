@@ -1,9 +1,8 @@
 package com.neyra.gymapp
 
 import android.app.Application
-import com.neyra.gymapp.data.sync.SyncManager
 import dagger.hilt.android.HiltAndroidApp
-import javax.inject.Inject
+import timber.log.Timber
 
 @HiltAndroidApp
 class GymApplication : Application() {
@@ -13,6 +12,11 @@ class GymApplication : Application() {
         super.onCreate()
         // Set the base URL dynamically based on build flavor or environment.
         System.setProperty("com.neyra.gymapp.openapi.baseUrl", "http://10.0.2.2:8080")
-
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        } else {
+            // For release builds, you might want a custom tree that reports crashes
+            // Timber.plant(ReleaseTree())
+        }
     }
 }
