@@ -18,6 +18,9 @@ data class WorkoutEntity(
     val name: String,
     val trainingProgramId: String,
     val position: Int,
+    val localCreatedAt: Long,
+    val localUpdatedAt: Long,
+    val serverCreatedAt: Long?,
+    val serverUpdatedAt: Long?,
     val syncStatus: SyncStatus = SyncStatus.SYNCED,
-    val lastModified: Long = System.currentTimeMillis()
 )

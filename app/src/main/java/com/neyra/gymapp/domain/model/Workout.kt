@@ -1,7 +1,6 @@
 package com.neyra.gymapp.domain.model
 
 import java.time.Duration
-import java.time.Instant
 
 /**
  * Domain model representing a Workout within a Training Program
@@ -16,7 +15,6 @@ data class Workout(
     val trainingProgramId: String,
     val name: String,
     val position: Int = 0,
-    val createdAt: Instant? = null,
     val exercises: List<WorkoutExercise> = emptyList()
 ) {
     // Initialization block for validation
@@ -41,31 +39,6 @@ data class Workout(
         return Duration.ofMinutes((totalSets * 3).toLong())
     }
 
-    /**
-     * Checks if this workout is considered intense based on exercise count and total sets
-     * @return Boolean indicating if the workout is intense
-     */
-    fun isIntense(): Boolean {
-        val totalSets = exercises.sumOf { it.sets }
-        return exercises.size >= 5 || totalSets >= 20
-    }
-
-    /**
-     * Calculates the primary muscle focus of this workout
-     * @return Primary muscle group if there's a clear focus, null otherwise
-     */
-    fun getPrimaryMuscleGroup(): String? {
-        // Group exercises by primary muscle and count
-        val muscleGroups = exercises.groupBy { it.primaryMuscle }
-            .mapValues { it.value.size }
-
-        // Find the muscle with the most exercises
-        val (muscle, count) = muscleGroups.maxByOrNull { it.value } ?: return null
-
-        // Only return the muscle if it accounts for at least 40% of the exercises
-        val threshold = exercises.size * 0.4
-        return if (count >= threshold) muscle else null
-    }
 
     companion object {
         const val MAX_NAME_LENGTH = 50

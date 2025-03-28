@@ -1,14 +1,12 @@
 package com.neyra.gymapp.data.dao
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.neyra.gymapp.data.entities.SyncStatus
 import com.neyra.gymapp.data.entities.WorkoutEntity
-import com.neyra.gymapp.data.entities.WorkoutExerciseEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -25,25 +23,37 @@ interface WorkoutDao {
     @Query("SELECT * FROM workouts WHERE trainingProgramId = :trainingProgramId ORDER BY position ASC")
     fun getWorkoutsByTrainingProgramId(trainingProgramId: String): Flow<List<WorkoutEntity>>
 
-    @Query("SELECT * FROM workout_exercises WHERE workoutId IN (:workoutIds) ORDER BY workoutId, position ASC")
-    fun getAllByWorkoutIds(workoutIds: List<String>): Flow<List<WorkoutExerciseEntity>>
-
     @Query("SELECT COUNT(*) FROM workouts WHERE trainingProgramId = :trainingProgramId")
     suspend fun countByTrainingProgramId(trainingProgramId: String): Int
 
-    @Query("UPDATE workouts SET name = :name, syncStatus = :syncStatus, lastModified = :lastModified WHERE id = :id")
+    @Query("UPDATE workouts SET name = :name, syncStatus = :syncStatus, localUpdatedAt = :localUpdatedAt WHERE id = :id")
     suspend fun updateName(
         id: String,
         name: String,
-        syncStatus: SyncStatus,
-        lastModified: Long
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE,
+        localUpdatedAt: Long = System.currentTimeMillis()
     ): Int
 
     @Query("UPDATE workouts SET syncStatus = :status WHERE id = :id")
     suspend fun updateSyncStatus(id: String, status: SyncStatus)
 
-    @Query("UPDATE workouts SET position = :position WHERE id = :id")
-    suspend fun updatePosition(id: String, position: Int)
+    @Query("UPDATE workouts SET position = :position, syncStatus = :syncStatus, localUpdatedAt = :localUpdatedAt WHERE id = :id")
+    suspend fun updatePosition(
+        id: String, position: Int, syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE,
+        localUpdatedAt: Long = System.currentTimeMillis()
+    )
+
+    @Query("UPDATE workouts SET syncStatus = :status, serverUpdatedAt = :serverUpdatedAt WHERE id = :id")
+    suspend fun updateSyncStatus(id: String, status: SyncStatus, serverUpdatedAt: Long)
+    
+    @Query("UPDATE workouts SET id = :newId, syncStatus = :syncStatus,serverCreatedAt = :serverCreatedAt, serverUpdatedAt = :serverUpdatedAt WHERE id = :oldId")
+    suspend fun updateIdAndSyncStatus(
+        oldId: String,
+        newId: String,
+        syncStatus: SyncStatus,
+        serverCreatedAt: Long,
+        serverUpdatedAt: Long
+    )
 
     @Transaction
     suspend fun reorderWorkouts(workoutId: String, newPosition: Int) {
@@ -67,28 +77,38 @@ interface WorkoutDao {
     @Query(
         """
         UPDATE workouts 
-        SET position = position - 1 
-        WHERE trainingProgramId = :programId 
+        SET position = position - 1,
+        syncStatus = :syncStatus, localUpdatedAt = :localUpdatedAt
+        WHERE trainingProgramId = :programId
         AND position BETWEEN :start AND :end
     """
     )
-    suspend fun decrementPositions(programId: String, start: Int, end: Int)
+    suspend fun decrementPositions(
+        programId: String, start: Int, end: Int, syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE,
+        localUpdatedAt: Long = System.currentTimeMillis()
+    )
 
     @Query(
         """
         UPDATE workouts 
-        SET position = position + 1 
-        WHERE trainingProgramId = :programId 
+        SET position = position + 1,
+        syncStatus = :syncStatus,
+        localUpdatedAt = :localUpdatedAt
+        WHERE trainingProgramId = :programId
         AND position BETWEEN :start AND :end
     """
     )
-    suspend fun incrementPositions(programId: String, start: Int, end: Int)
+    suspend fun incrementPositions(
+        programId: String,
+        start: Int,
+        end: Int,
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE,
+        localUpdatedAt: Long = System.currentTimeMillis()
+    )
 
     @Query("DELETE FROM workouts WHERE id = :id")
     suspend fun delete(id: String)
 
-    @Delete
-    suspend fun delete(workout: WorkoutEntity)
 
     @Query("SELECT MAX(position) FROM workouts WHERE trainingProgramId = :programId")
     suspend fun getMaxPosition(programId: String): Int?
