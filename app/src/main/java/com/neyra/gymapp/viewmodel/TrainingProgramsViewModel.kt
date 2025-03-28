@@ -2,7 +2,6 @@ package com.neyra.gymapp.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.neyra.gymapp.common.UiState
 import com.neyra.gymapp.domain.ProfileManager
 import com.neyra.gymapp.domain.error.DomainError
 import com.neyra.gymapp.domain.model.TrainingProgram
@@ -15,8 +14,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
+
+/**
+ * Unified UI state for the training programs screen
+ */
+data class TrainingProgramsUiState(
+    val programs: List<TrainingProgram> = emptyList(),
+    val selectedProgram: TrainingProgram? = null,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val isCreateProgramDrawerVisible: Boolean = false,
+    val isUpdateProgramDrawerVisible: Boolean = false,
+    val isDeleteConfirmationVisible: Boolean = false
+)
 
 @HiltViewModel
 class TrainingProgramsViewModel @Inject constructor(
@@ -27,51 +41,43 @@ class TrainingProgramsViewModel @Inject constructor(
     private val profileManager: ProfileManager
 ) : ViewModel() {
 
-    // Program list state
-    private val _programs = MutableStateFlow<UiState<List<TrainingProgram>>>(UiState.Loading)
-    val programs: StateFlow<UiState<List<TrainingProgram>>> = _programs.asStateFlow()
-
-    // Selected program for edit/delete operations
-    private val _selectedProgram = MutableStateFlow<TrainingProgram?>(null)
-    val selectedProgram: StateFlow<TrainingProgram?> = _selectedProgram.asStateFlow()
-
-    // UI state for drawers
-    private val _isCreateProgramDrawerVisible = MutableStateFlow(false)
-    val isCreateProgramDrawerVisible: StateFlow<Boolean> =
-        _isCreateProgramDrawerVisible.asStateFlow()
-
-    private val _isUpdateProgramDrawerVisible = MutableStateFlow(false)
-    val isUpdateProgramDrawerVisible: StateFlow<Boolean> =
-        _isUpdateProgramDrawerVisible.asStateFlow()
-
-    private val _isDeleteConfirmationVisible = MutableStateFlow(false)
-    val isDeleteConfirmationVisible: StateFlow<Boolean> = _isDeleteConfirmationVisible.asStateFlow()
-
-    // Loading and error states
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+    // Unified UI state
+    private val _uiState = MutableStateFlow(TrainingProgramsUiState())
+    val uiState: StateFlow<TrainingProgramsUiState> = _uiState.asStateFlow()
 
     init {
         fetchTrainingPrograms()
     }
 
+    /**
+     * Fetches training programs from the repository
+     */
     fun fetchTrainingPrograms() {
         viewModelScope.launch {
-            _isLoading.value = true
-            _programs.value = UiState.Loading
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+
             try {
-                val profileId = profileManager.getCurrentProfileId() ?: return@launch
+                val profileId = profileManager.getCurrentProfileId() ?: run {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "User profile not found"
+                        )
+                    }
+                    return@launch
+                }
 
                 getTrainingProgramsUseCase(profileId)
                     .catch { exception ->
                         handleError(exception)
                     }
                     .collect { programs ->
-                        _programs.value = UiState.Success(programs)
-                        _isLoading.value = false
+                        _uiState.update {
+                            it.copy(
+                                programs = programs,
+                                isLoading = false
+                            )
+                        }
                     }
             } catch (e: Exception) {
                 handleError(e)
@@ -79,89 +85,125 @@ class TrainingProgramsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Creates a new training program
+     */
     fun createTrainingProgram(name: String, description: String? = null) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+
             try {
                 val profileId = profileManager.getCurrentProfileId() ?: run {
-                    _errorMessage.value = "User profile not found"
-                    _isLoading.value = false
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "User profile not found"
+                        )
+                    }
                     return@launch
                 }
 
                 // Validate input on viewmodel level for better UX
-                validateProgramInput(name, description)
-                    ?.let { error ->
-                        _errorMessage.value = error
-                        _isLoading.value = false
-                        return@launch
+                validateProgramInput(name, description)?.let { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = error
+                        )
                     }
+                    return@launch
+                }
 
                 val result = createUseCase(profileId, name, description)
 
-                result.onSuccess {
-                    _isCreateProgramDrawerVisible.value = false
-                    refreshProgramsList()
+                result.onSuccess { program ->
+                    _uiState.update { state ->
+                        state.copy(
+                            programs = state.programs + program,
+                            isCreateProgramDrawerVisible = false,
+                            isLoading = false
+                        )
+                    }
                 }.onFailure { error ->
                     handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
 
+    /**
+     * Updates an existing training program
+     */
     fun updateTrainingProgram(
         programId: String,
         name: String? = null,
         description: String? = null
     ) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+
             try {
                 // Validate input on viewmodel level
                 name?.let {
-                    validateProgramInput(it, description)
-                        ?.let { error ->
-                            _errorMessage.value = error
-                            _isLoading.value = false
-                            return@launch
+                    validateProgramInput(it, description)?.let { error ->
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = error
+                            )
                         }
+                        return@launch
+                    }
                 }
+
                 val result = updateUseCase(programId, name, description)
 
-                result.onSuccess {
-                    _isUpdateProgramDrawerVisible.value = false
-                    refreshProgramsList()
+                result.onSuccess { updatedProgram ->
+                    _uiState.update { state ->
+                        state.copy(
+                            programs = state.programs.map {
+                                if (it.id == updatedProgram.id) updatedProgram else it
+                            },
+                            isUpdateProgramDrawerVisible = false,
+                            isLoading = false
+                        )
+                    }
                 }.onFailure { error ->
                     handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
 
+    /**
+     * Deletes a training program
+     */
     fun deleteTrainingProgram(programId: String) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+
             try {
                 val result = deleteUseCase(programId)
 
-                result.onSuccess {
-                    _isDeleteConfirmationVisible.value = false
-                    refreshProgramsList()
+                result.onSuccess { success ->
+                    if (success) {
+                        _uiState.update { state ->
+                            state.copy(
+                                programs = state.programs.filter { it.id != programId },
+                                isDeleteConfirmationVisible = false,
+                                isLoading = false
+                            )
+                        }
+                    }
                 }.onFailure { error ->
                     handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
@@ -183,46 +225,45 @@ class TrainingProgramsViewModel @Inject constructor(
         return null
     }
 
-    // Helper function to refresh programs list after changes
-    private fun refreshProgramsList() {
-        fetchTrainingPrograms()
-    }
-
-    // Dialog and drawer state management
+    // UI state management methods
     fun setSelectedProgram(program: TrainingProgram) {
-        _selectedProgram.value = program
+        _uiState.update { it.copy(selectedProgram = program) }
     }
 
     fun showCreateProgramDrawer() {
-        _isCreateProgramDrawerVisible.value = true
+        _uiState.update { it.copy(isCreateProgramDrawerVisible = true) }
     }
 
     fun hideCreateProgramDrawer() {
-        _isCreateProgramDrawerVisible.value = false
+        _uiState.update { it.copy(isCreateProgramDrawerVisible = false) }
     }
 
     fun showUpdateProgramDrawer() {
-        _isUpdateProgramDrawerVisible.value = true
+        _uiState.update { it.copy(isUpdateProgramDrawerVisible = true) }
     }
 
     fun hideUpdateProgramDrawer() {
-        _isUpdateProgramDrawerVisible.value = false
+        _uiState.update { it.copy(isUpdateProgramDrawerVisible = false) }
     }
 
     fun showDeleteConfirmation() {
-        _isDeleteConfirmationVisible.value = true
+        _uiState.update { it.copy(isDeleteConfirmationVisible = true) }
     }
 
     fun hideDeleteConfirmation() {
-        _isDeleteConfirmationVisible.value = false
+        _uiState.update { it.copy(isDeleteConfirmationVisible = false) }
     }
 
     fun clearErrorMessage() {
-        _errorMessage.value = null
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
+    /**
+     * Centralized error handling
+     */
     private fun handleError(error: Throwable) {
-        _isLoading.value = false
+        Timber.e(error, "Error in TrainingProgramsViewModel")
+
         val errorMessage = when (error) {
             is DomainError.ValidationError.InvalidName ->
                 "Invalid program name: ${error.message}"
@@ -249,13 +290,14 @@ class TrainingProgramsViewModel @Inject constructor(
                 error.message
 
             else ->
-                "An unexpected error occurred: ${error.message}"
+                "An unexpected error occurred: ${error.message ?: "Unknown error"}"
         }
-        _errorMessage.value = errorMessage
-        _programs.value = when (_programs.value) {
-            is UiState.Loading -> UiState.Error(errorMessage)
-            is UiState.Success -> _programs.value // Keep current data but show error in snackbar
-            is UiState.Error -> UiState.Error(errorMessage)
+
+        _uiState.update {
+            it.copy(
+                errorMessage = errorMessage,
+                isLoading = false
+            )
         }
     }
 }

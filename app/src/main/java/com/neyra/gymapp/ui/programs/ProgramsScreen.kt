@@ -1,6 +1,5 @@
 package com.neyra.gymapp.ui.programs
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,23 +10,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -41,7 +35,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -53,27 +46,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.neyra.gymapp.common.UiState
 import com.neyra.gymapp.domain.model.TrainingProgram
 import com.neyra.gymapp.ui.components.ConfirmationBottomDrawer
-import com.neyra.gymapp.ui.theme.AccentMagenta
-import com.neyra.gymapp.ui.theme.AccentNeonBlue
-import com.neyra.gymapp.ui.theme.AccentNeonGreen
-import com.neyra.gymapp.ui.theme.AccentPurple
-import com.neyra.gymapp.ui.theme.BackgroundPrimary
-import com.neyra.gymapp.ui.theme.BackgroundSecondary
-import com.neyra.gymapp.ui.theme.CardBackground
-import com.neyra.gymapp.ui.theme.StatusError
+import com.neyra.gymapp.ui.components.EmptyStateContent
+import com.neyra.gymapp.ui.components.LoadingScreen
 import com.neyra.gymapp.viewmodel.TrainingProgramsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,17 +63,13 @@ fun TrainingProgramsScreen(
     onCalendarClicked: () -> Unit,
     viewModel: TrainingProgramsViewModel = hiltViewModel()
 ) {
-    val programsState by viewModel.programs.collectAsState()
-    val isCreateProgramDrawerVisible by viewModel.isCreateProgramDrawerVisible.collectAsState()
-    val isUpdateProgramDrawerVisible by viewModel.isUpdateProgramDrawerVisible.collectAsState()
-    val selectedProgram by viewModel.selectedProgram.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
-    val isDeleteConfirmationVisible by viewModel.isDeleteConfirmationVisible.collectAsState()
+    // Collect UI state
+    val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Handle error messages
-    LaunchedEffect(errorMessage) {
-        errorMessage?.let {
+    // Show error message in snackbar if present
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearErrorMessage()
         }
@@ -101,13 +77,12 @@ fun TrainingProgramsScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = BackgroundPrimary,
         topBar = {
             TopAppBar(
-                title = { Text("Training programs", fontWeight = FontWeight.Bold) },
+                title = { Text("Training Programs") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = BackgroundSecondary,
-                    titleContentColor = AccentMagenta
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.primary
                 ),
                 actions = {
                     // Calendar icon to navigate to calendar view
@@ -115,7 +90,7 @@ fun TrainingProgramsScreen(
                         Icon(
                             Icons.Default.CalendarToday,
                             contentDescription = "Open Calendar",
-                            tint = AccentNeonBlue
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -124,19 +99,13 @@ fun TrainingProgramsScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { viewModel.showCreateProgramDrawer() },
-                containerColor = AccentMagenta,
-                contentColor = Color.White,
-                shape = CircleShape,
-                modifier = Modifier.shadow(
-                    elevation = 10.dp,
-                    spotColor = AccentMagenta.copy(alpha = 0.8f),
-                    ambientColor = AccentMagenta.copy(alpha = 0.4f)
-                )
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
                 Icon(
                     Icons.Default.Add,
                     contentDescription = "Create Training Program",
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.padding(16.dp)
                 )
             }
         }
@@ -145,46 +114,52 @@ fun TrainingProgramsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(BackgroundPrimary)
         ) {
-            when (val state = programsState) {
-                is UiState.Loading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = AccentMagenta
+            when {
+                uiState.isLoading && uiState.programs.isEmpty() -> {
+                    LoadingScreen()
+                }
+
+                uiState.programs.isEmpty() -> {
+                    EmptyStateContent(
+                        title = "No training programs",
+                        message = "Tap the '+' button to create your first training program",
+                        buttonText = "Add Training Program",
+                        onButtonClick = { viewModel.showCreateProgramDrawer() }
                     )
                 }
 
-                is UiState.Success -> {
-                    if (state.data.isEmpty()) {
-                        EmptyStateContent()
-                    } else {
-                        TrainingProgramsList(
-                            programs = state.data,
-                            onProgramSelected = onProgramSelected,
-                            onEditProgram = { program ->
-                                viewModel.setSelectedProgram(program)
-                                viewModel.showUpdateProgramDrawer()
-                            },
-                            onDeleteProgram = { program ->
-                                viewModel.setSelectedProgram(program)
-                                viewModel.showDeleteConfirmation()
-                            }
-                        )
-                    }
-                }
-
-                is UiState.Error -> {
-                    ErrorContent(
-                        message = state.message,
-                        onRetry = { viewModel.fetchTrainingPrograms() }
+                else -> {
+                    TrainingProgramList(
+                        programs = uiState.programs,
+                        onProgramSelected = onProgramSelected,
+                        onEditProgram = { program ->
+                            viewModel.setSelectedProgram(program)
+                            viewModel.showUpdateProgramDrawer()
+                        },
+                        onDeleteProgram = { program ->
+                            viewModel.setSelectedProgram(program)
+                            viewModel.showDeleteConfirmation()
+                        }
                     )
+                }
+            }
+
+            // Loading indicator overlay for operations
+            if (uiState.isLoading && uiState.programs.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LoadingScreen()
                 }
             }
         }
 
         // Create Program Drawer
-        if (isCreateProgramDrawerVisible) {
+        if (uiState.isCreateProgramDrawerVisible) {
             CreateTrainingProgramDrawer(
                 onCancel = { viewModel.hideCreateProgramDrawer() },
                 onCreate = { name, description ->
@@ -194,45 +169,39 @@ fun TrainingProgramsScreen(
         }
 
         // Update Program Drawer
-        if (isUpdateProgramDrawerVisible) {
-            selectedProgram?.let { program ->
-                UpdateTrainingProgramDrawer(
-                    program = program,
-                    onCancel = { viewModel.hideUpdateProgramDrawer() },
-                    onUpdate = { name, description ->
-                        viewModel.updateTrainingProgram(
-                            program.id ?: return@UpdateTrainingProgramDrawer,
-                            name,
-                            description
-                        )
+        if (uiState.isUpdateProgramDrawerVisible && uiState.selectedProgram != null) {
+            UpdateTrainingProgramDrawer(
+                program = uiState.selectedProgram!!,
+                onCancel = { viewModel.hideUpdateProgramDrawer() },
+                onUpdate = { name, description ->
+                    uiState.selectedProgram?.id?.let { id ->
+                        viewModel.updateTrainingProgram(id, name, description)
                     }
-                )
-            }
+                }
+            )
         }
 
         // Delete Confirmation Dialog
-        if (isDeleteConfirmationVisible) {
-            selectedProgram?.let { program ->
-                ConfirmationBottomDrawer(
-                    message = "Are you sure you want to delete \"${program.name}\"?",
-                    confirmButtonText = "Delete",
-                    cancelButtonText = "Cancel",
-                    onConfirm = {
-                        program.id?.let { id ->
-                            viewModel.deleteTrainingProgram(id)
-                        }
-                    },
-                    onCancel = { viewModel.hideDeleteConfirmation() }
-                )
-            }
+        if (uiState.isDeleteConfirmationVisible && uiState.selectedProgram != null) {
+            ConfirmationBottomDrawer(
+                message = "Are you sure you want to delete \"${uiState.selectedProgram?.name}\"?",
+                confirmButtonText = "Delete",
+                cancelButtonText = "Cancel",
+                onConfirm = {
+                    uiState.selectedProgram?.id?.let { id ->
+                        viewModel.deleteTrainingProgram(id)
+                    }
+                },
+                onCancel = { viewModel.hideDeleteConfirmation() }
+            )
         }
     }
 }
 
 @Composable
-fun TrainingProgramsList(
+fun TrainingProgramList(
     programs: List<TrainingProgram>,
-    onProgramSelected: (programId: String) -> Unit,
+    onProgramSelected: (String) -> Unit,
     onEditProgram: (TrainingProgram) -> Unit,
     onDeleteProgram: (TrainingProgram) -> Unit
 ) {
@@ -241,123 +210,17 @@ fun TrainingProgramsList(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        items(programs) { program ->
+        items(
+            items = programs,
+            key = { it.id ?: it.hashCode().toString() }
+        ) { program ->
             TrainingProgramCard(
                 program = program,
-                onClick = { onProgramSelected(program.id ?: "") },
+                onClick = { program.id?.let { onProgramSelected(it) } },
                 onEdit = { onEditProgram(program) },
                 onDelete = { onDeleteProgram(program) }
             )
             Spacer(modifier = Modifier.height(16.dp))
-        }
-    }
-}
-
-@Composable
-fun EmptyStateContent(
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Add Training Program",
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                AccentMagenta.copy(alpha = 0.7f),
-                                AccentMagenta.copy(alpha = 0.3f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .padding(16.dp),
-                tint = Color.White
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "No training programs",
-                style = MaterialTheme.typography.titleLarge,
-                color = AccentMagenta,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "Tap the '+' button to create your first training program",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun ErrorContent(
-    message: String,
-    onRetry: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Error,
-                contentDescription = "Error",
-                modifier = Modifier
-                    .size(80.dp)
-                    .padding(bottom = 16.dp),
-                tint = StatusError
-            )
-            Text(
-                text = "SYSTEM MALFUNCTION",
-                style = MaterialTheme.typography.titleLarge,
-                color = StatusError,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 8.dp),
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            Button(
-                onClick = onRetry,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentNeonGreen,
-                    contentColor = Color.Black
-                ),
-                modifier = Modifier.shadow(
-                    elevation = 8.dp,
-                    spotColor = AccentNeonGreen.copy(alpha = 0.8f),
-                    ambientColor = AccentNeonGreen.copy(alpha = 0.4f)
-                )
-            ) {
-                Text("REBOOT SYSTEM", fontWeight = FontWeight.Bold)
-            }
         }
     }
 }
@@ -375,17 +238,12 @@ fun TrainingProgramCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .shadow(
-                elevation = 8.dp,
-                spotColor = AccentMagenta.copy(alpha = 0.5f),
-                ambientColor = AccentMagenta.copy(alpha = 0.2f)
-            ),
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         colors = CardDefaults.cardColors(
-            containerColor = CardBackground,
-            contentColor = Color.White
-        ),
-        shape = RoundedCornerShape(8.dp)
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     ) {
         Row(
             modifier = Modifier
@@ -398,7 +256,7 @@ fun TrainingProgramCard(
                 Text(
                     text = program.name,
                     style = MaterialTheme.typography.titleMedium,
-                    color = AccentNeonBlue
+                    color = MaterialTheme.colorScheme.primary
                 )
                 program.description?.let {
                     if (it.isNotBlank()) {
@@ -406,50 +264,30 @@ fun TrainingProgramCard(
                         Text(
                             text = it,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-                // Display program complexity with cyberpunk styling
+
+                // Display program complexity
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val complexityColor = when (program.getProgramComplexity()) {
-                        TrainingProgram.ProgramComplexity.BEGINNER -> AccentNeonGreen
-                        TrainingProgram.ProgramComplexity.INTERMEDIATE -> AccentNeonBlue
-                        TrainingProgram.ProgramComplexity.ADVANCED -> AccentMagenta
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .background(complexityColor, CircleShape)
-                            .shadow(
-                                elevation = 4.dp,
-                                spotColor = complexityColor,
-                                shape = CircleShape
-                            )
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
                     Text(
                         text = program.getProgramComplexity().name,
                         style = MaterialTheme.typography.bodySmall,
-                        color = complexityColor
+                        color = MaterialTheme.colorScheme.secondary
                     )
                 }
             }
 
             // More options button
-            IconButton(
-                onClick = { isOptionsExpanded = true }
-            ) {
+            IconButton(onClick = { isOptionsExpanded = true }) {
                 Icon(
                     Icons.Default.MoreVert,
                     contentDescription = "Program Options",
-                    tint = AccentMagenta
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -458,8 +296,7 @@ fun TrainingProgramCard(
     // Options Bottom Sheet
     if (isOptionsExpanded) {
         ModalBottomSheet(
-            onDismissRequest = { isOptionsExpanded = false },
-            containerColor = BackgroundSecondary
+            onDismissRequest = { isOptionsExpanded = false }
         ) {
             Column(
                 modifier = Modifier
@@ -469,44 +306,35 @@ fun TrainingProgramCard(
                 Text(
                     text = "Options",
                     style = MaterialTheme.typography.titleMedium,
-                    color = AccentMagenta,
-                    modifier = Modifier.padding(bottom = 16.dp),
-                    fontWeight = FontWeight.Bold
+                    modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                HorizontalDivider(color = AccentMagenta.copy(alpha = 0.5f))
-
-                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
 
                 TextButton(
                     onClick = {
-                        onEdit()
                         isOptionsExpanded = false
+                        onEdit()
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = AccentNeonBlue
-                    )
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         "Edit program",
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.bodyLarge
                     )
                 }
 
                 TextButton(
                     onClick = {
-                        onDelete()
                         isOptionsExpanded = false
+                        onDelete()
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = StatusError
-                    )
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         "Delete program",
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
@@ -552,8 +380,7 @@ fun CreateTrainingProgramDrawer(
     }
 
     ModalBottomSheet(
-        onDismissRequest = onCancel,
-        containerColor = BackgroundSecondary
+        onDismissRequest = onCancel
     ) {
         Column(
             modifier = Modifier
@@ -563,36 +390,21 @@ fun CreateTrainingProgramDrawer(
             Text(
                 text = "Create training program",
                 style = MaterialTheme.typography.titleLarge,
-                color = AccentMagenta,
-                modifier = Modifier.padding(bottom = 24.dp),
-                fontWeight = FontWeight.Bold
+                modifier = Modifier.padding(bottom = 24.dp)
             )
 
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Program Name", color = AccentNeonBlue) },
+                label = { Text("Program Name") },
                 modifier = Modifier.fillMaxWidth(),
                 isError = nameError != null,
                 supportingText = {
                     nameError?.let {
-                        Text(it, color = StatusError)
+                        Text(it, color = MaterialTheme.colorScheme.error)
                     } ?: Text("${name.length}/${TrainingProgram.MAX_NAME_LENGTH}")
                 },
                 singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = BackgroundSecondary,
-                    unfocusedContainerColor = BackgroundSecondary,
-                    focusedIndicatorColor = AccentMagenta,
-                    unfocusedIndicatorColor = AccentMagenta.copy(alpha = 0.5f),
-                    cursorColor = AccentMagenta,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedLabelColor = AccentNeonBlue,
-                    unfocusedLabelColor = AccentNeonBlue.copy(alpha = 0.7f),
-                    errorCursorColor = StatusError,
-                    errorIndicatorColor = StatusError
-                ),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Words,
                     imeAction = ImeAction.Next
@@ -604,28 +416,15 @@ fun CreateTrainingProgramDrawer(
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("Description (Optional)", color = AccentNeonBlue) },
+                label = { Text("Description (Optional)") },
                 modifier = Modifier.fillMaxWidth(),
                 isError = descriptionError != null,
                 supportingText = {
                     descriptionError?.let {
-                        Text(it, color = StatusError)
+                        Text(it, color = MaterialTheme.colorScheme.error)
                     } ?: Text("${description.length}/${TrainingProgram.MAX_DESCRIPTION_LENGTH}")
                 },
-                minLines = 3,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = BackgroundSecondary,
-                    unfocusedContainerColor = BackgroundSecondary,
-                    focusedIndicatorColor = AccentMagenta,
-                    unfocusedIndicatorColor = AccentMagenta.copy(alpha = 0.5f),
-                    cursorColor = AccentMagenta,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedLabelColor = AccentNeonBlue,
-                    unfocusedLabelColor = AccentNeonBlue.copy(alpha = 0.7f),
-                    errorCursorColor = StatusError,
-                    errorIndicatorColor = StatusError
-                )
+                minLines = 3
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -634,13 +433,8 @@ fun CreateTrainingProgramDrawer(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(
-                    onClick = onCancel,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = Color.White.copy(alpha = 0.7f)
-                    )
-                ) {
-                    Text("Cancel", fontWeight = FontWeight.Bold)
+                TextButton(onClick = onCancel) {
+                    Text("Cancel")
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -653,18 +447,9 @@ fun CreateTrainingProgramDrawer(
                                 description.takeIf { it.isNotBlank() }
                             )
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentNeonBlue,
-                        contentColor = Color.Black
-                    ),
-                    modifier = Modifier.shadow(
-                        elevation = 4.dp,
-                        spotColor = AccentNeonBlue.copy(alpha = 0.8f),
-                        ambientColor = AccentNeonBlue.copy(alpha = 0.4f)
-                    )
+                    }
                 ) {
-                    Text("Create", fontWeight = FontWeight.Bold)
+                    Text("Create")
                 }
             }
         }
@@ -715,8 +500,7 @@ fun UpdateTrainingProgramDrawer(
     }
 
     ModalBottomSheet(
-        onDismissRequest = onCancel,
-        containerColor = BackgroundSecondary
+        onDismissRequest = onCancel
     ) {
         Column(
             modifier = Modifier
@@ -726,36 +510,21 @@ fun UpdateTrainingProgramDrawer(
             Text(
                 text = "Update training program",
                 style = MaterialTheme.typography.titleLarge,
-                color = AccentPurple,
-                modifier = Modifier.padding(bottom = 24.dp),
-                fontWeight = FontWeight.Bold
+                modifier = Modifier.padding(bottom = 24.dp)
             )
 
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Program Name", color = AccentNeonBlue) },
+                label = { Text("Program Name") },
                 modifier = Modifier.fillMaxWidth(),
                 isError = nameError != null,
                 supportingText = {
                     nameError?.let {
-                        Text(it, color = StatusError)
+                        Text(it, color = MaterialTheme.colorScheme.error)
                     } ?: Text("${name.length}/${TrainingProgram.MAX_NAME_LENGTH}")
                 },
                 singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = BackgroundSecondary,
-                    unfocusedContainerColor = BackgroundSecondary,
-                    focusedIndicatorColor = AccentPurple,
-                    unfocusedIndicatorColor = AccentPurple.copy(alpha = 0.5f),
-                    cursorColor = AccentPurple,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedLabelColor = AccentNeonBlue,
-                    unfocusedLabelColor = AccentNeonBlue.copy(alpha = 0.7f),
-                    errorCursorColor = StatusError,
-                    errorIndicatorColor = StatusError
-                ),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Words,
                     imeAction = ImeAction.Next
@@ -767,28 +536,15 @@ fun UpdateTrainingProgramDrawer(
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("Description (Optional)", color = AccentNeonBlue) },
+                label = { Text("Description (Optional)") },
                 modifier = Modifier.fillMaxWidth(),
                 isError = descriptionError != null,
                 supportingText = {
                     descriptionError?.let {
-                        Text(it, color = StatusError)
+                        Text(it, color = MaterialTheme.colorScheme.error)
                     } ?: Text("${description.length}/${TrainingProgram.MAX_DESCRIPTION_LENGTH}")
                 },
-                minLines = 3,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = BackgroundSecondary,
-                    unfocusedContainerColor = BackgroundSecondary,
-                    focusedIndicatorColor = AccentPurple,
-                    unfocusedIndicatorColor = AccentPurple.copy(alpha = 0.5f),
-                    cursorColor = AccentPurple,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedLabelColor = AccentNeonBlue,
-                    unfocusedLabelColor = AccentNeonBlue.copy(alpha = 0.7f),
-                    errorCursorColor = StatusError,
-                    errorIndicatorColor = StatusError
-                )
+                minLines = 3
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -798,12 +554,9 @@ fun UpdateTrainingProgramDrawer(
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(
-                    onClick = onCancel,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = Color.White.copy(alpha = 0.7f)
-                    )
+                    onClick = onCancel
                 ) {
-                    Text("Cancel", fontWeight = FontWeight.Bold)
+                    Text("Cancel")
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -818,20 +571,9 @@ fun UpdateTrainingProgramDrawer(
                             onUpdate(updatedName, updatedDescription)
                         }
                     },
-                    enabled = hasChanges,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentPurple,
-                        contentColor = Color.White,
-                        disabledContainerColor = AccentPurple.copy(alpha = 0.3f),
-                        disabledContentColor = Color.White.copy(alpha = 0.3f)
-                    ),
-                    modifier = Modifier.shadow(
-                        elevation = 4.dp,
-                        spotColor = AccentPurple.copy(alpha = 0.8f),
-                        ambientColor = AccentPurple.copy(alpha = 0.4f)
-                    )
+                    enabled = hasChanges
                 ) {
-                    Text("Update", fontWeight = FontWeight.Bold)
+                    Text("Update")
                 }
             }
         }

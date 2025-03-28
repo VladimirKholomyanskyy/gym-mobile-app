@@ -24,7 +24,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -47,15 +48,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.neyra.gymapp.common.UiState
-import com.neyra.gymapp.domain.model.Workout
 import com.neyra.gymapp.domain.model.WorkoutExercise
 import com.neyra.gymapp.openapi.models.Exercise
 import com.neyra.gymapp.ui.components.ConfirmationBottomDrawer
+import com.neyra.gymapp.ui.components.EmptyStateContent
+import com.neyra.gymapp.ui.components.LoadingScreen
 import com.neyra.gymapp.viewmodel.WorkoutExercisesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,26 +67,20 @@ fun WorkoutExercisesScreen(
     onStartWorkoutSession: (sessionId: String) -> Unit,
     viewModel: WorkoutExercisesViewModel = hiltViewModel()
 ) {
+    // Collect UI state
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     // Load workout and exercises when the screen appears
     LaunchedEffect(workoutId) {
         viewModel.fetch(workoutId)
     }
 
-    val workout by viewModel.workout.collectAsState()
-    val workoutExercises by viewModel.workoutExercises.collectAsState()
-    val exercisesMap by viewModel.exercisesMap.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
-    val isCreateWorkoutExerciseDrawerVisible by viewModel.isCreateWorkoutExerciseDrawerVisible.collectAsState()
-    val isUpdateWorkoutExerciseDrawerVisible by viewModel.isUpdateWorkoutExerciseDrawerVisible.collectAsState()
-    val selectedWorkoutExercise by viewModel.selectedWorkoutExercise.collectAsState()
-
-    val snackbarHostState = remember { SnackbarHostState() }
-
     // Show error message in snackbar if present
-    LaunchedEffect(errorMessage) {
-        if (errorMessage != null) {
-            snackbarHostState.showSnackbar(errorMessage!!)
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearErrorMessage()
         }
     }
 
@@ -95,10 +89,7 @@ fun WorkoutExercisesScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
-                    when (workout) {
-                        is UiState.Success -> Text((workout as UiState.Success<Workout>).data.name)
-                        else -> Text("Workout Exercises")
-                    }
+                    Text(uiState.workout?.name ?: "Workout Exercises")
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackPressed) {
@@ -134,82 +125,54 @@ fun WorkoutExercisesScreen(
                 .padding(paddingValues)
         ) {
             when {
-                isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
+                uiState.isLoading && uiState.exercises.isEmpty() -> {
+                    LoadingScreen()
+                }
+
+                uiState.exercises.isEmpty() -> {
+                    EmptyStateContent(
+                        title = "No exercises added yet",
+                        message = "Add your first exercise to get started",
+                        buttonText = "Add Exercise",
+                        onButtonClick = { viewModel.showCreateWorkoutExerciseDrawer() }
                     )
                 }
 
-                workoutExercises is UiState.Error -> {
-                    Text(
-                        text = (workoutExercises as UiState.Error).message,
-                        color = Color.Red,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(16.dp)
+                else -> {
+                    ExerciseList(
+                        exercises = uiState.exercises,
+                        onExerciseClick = { exercise ->
+                            exercise.exercise.id?.let { onWorkoutSelected(it) }
+                        },
+                        onEditExercise = { exercise ->
+                            viewModel.setSelectedWorkoutExercise(exercise)
+                            viewModel.showUpdateWorkoutExerciseDrawer()
+                        },
+                        onDeleteExercise = { exercise ->
+                            viewModel.setSelectedWorkoutExercise(exercise)
+                            viewModel.showDeleteConfirmation()
+                        }
                     )
                 }
+            }
 
-                workoutExercises is UiState.Success -> {
-                    val exercises =
-                        (workoutExercises as UiState.Success<List<WorkoutExercise>>).data
-                    if (exercises.isEmpty()) {
-                        // Empty state
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "No exercises added yet",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Add your first exercise to get started",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { viewModel.showCreateWorkoutExerciseDrawer() }) {
-                                Text("Add Exercise")
-                            }
-                        }
-                    } else {
-                        // List of exercises
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp)
-                        ) {
-                            items(exercises) { exercise ->
-                                WorkoutExerciseCard(
-                                    workoutExercise = exercise,
-                                    onClick = { onWorkoutSelected(exercise.exerciseId) },
-                                    onEdit = {
-                                        viewModel.setSelectedWorkoutExercise(exercise)
-                                        viewModel.showUpdateWorkoutExerciseDrawer()
-                                    },
-                                    onDelete = {
-                                        exercise.id?.let { id ->
-                                            viewModel.removeExerciseFromWorkout(id)
-                                        }
-                                    }
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-                        }
-                    }
+            // Loading indicator overlay for operations
+            if (uiState.isLoading && uiState.exercises.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LoadingScreen()
                 }
             }
         }
 
         // Create Exercise Drawer
-        if (isCreateWorkoutExerciseDrawerVisible) {
+        if (uiState.isCreateExerciseDrawerVisible) {
             CreateExerciseDrawer(
-                viewModel = viewModel,
-                exercisesMap = exercisesMap,
+                availableExercises = uiState.availableExercises.values.toList(),
                 onClose = { viewModel.hideCreateWorkoutExerciseDrawerVisible() },
                 onCreate = { exerciseId, sets, reps ->
                     viewModel.addExerciseToWorkout(
@@ -223,14 +186,13 @@ fun WorkoutExercisesScreen(
         }
 
         // Update Exercise Drawer
-        if (isUpdateWorkoutExerciseDrawerVisible && selectedWorkoutExercise != null) {
+        if (uiState.isUpdateExerciseDrawerVisible && uiState.selectedExercise != null) {
             UpdateExerciseDrawer(
-                viewModel = viewModel,
-                selectedWorkoutExercise = selectedWorkoutExercise!!,
-                exercisesMap = exercisesMap,
+                selectedExercise = uiState.selectedExercise!!,
+                availableExercises = uiState.availableExercises.values.toList(),
                 onClose = { viewModel.hideUpdateWorkoutExerciseDrawer() },
                 onUpdate = { exerciseId, sets, reps ->
-                    selectedWorkoutExercise?.id?.let { id ->
+                    uiState.selectedExercise?.id?.let { id ->
                         viewModel.updateExerciseInWorkout(
                             workoutId,
                             id,
@@ -241,6 +203,46 @@ fun WorkoutExercisesScreen(
                     }
                 }
             )
+        }
+
+        // Delete Confirmation Dialog
+        if (uiState.isDeleteConfirmationVisible && uiState.selectedExercise != null) {
+            ConfirmationBottomDrawer(
+                message = "Are you sure you want to remove this exercise?",
+                onConfirm = {
+                    uiState.selectedExercise?.id?.let { id ->
+                        viewModel.removeExerciseFromWorkout(id)
+                    }
+                },
+                onCancel = { viewModel.hideDeleteConfirmation() }
+            )
+        }
+    }
+}
+
+@Composable
+fun ExerciseList(
+    exercises: List<WorkoutExercise>,
+    onExerciseClick: (WorkoutExercise) -> Unit,
+    onEditExercise: (WorkoutExercise) -> Unit,
+    onDeleteExercise: (WorkoutExercise) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        items(
+            items = exercises,
+            key = { it.id ?: it.hashCode().toString() }
+        ) { exercise ->
+            WorkoutExerciseCard(
+                workoutExercise = exercise,
+                onClick = { onExerciseClick(exercise) },
+                onEdit = { onEditExercise(exercise) },
+                onDelete = { onDeleteExercise(exercise) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -254,7 +256,6 @@ fun WorkoutExerciseCard(
     onDelete: () -> Unit
 ) {
     var isDrawerVisible by remember { mutableStateOf(false) }
-    var isConfirmationVisible by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -271,7 +272,7 @@ fun WorkoutExerciseCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = workoutExercise.exerciseName,
+                    text = workoutExercise.exercise.name,
                     style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -279,12 +280,14 @@ fun WorkoutExerciseCard(
                     text = "${workoutExercise.sets} sets × ${workoutExercise.reps} reps",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                if (workoutExercise.primaryMuscle.isNotEmpty()) {
-                    Text(
-                        text = "Targets: ${workoutExercise.primaryMuscle}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                workoutExercise.exercise.primaryMuscle.let {
+                    if (it.isNotEmpty()) {
+                        Text(
+                            text = "Targets: $it",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -326,7 +329,7 @@ fun WorkoutExerciseCard(
                 TextButton(
                     onClick = {
                         isDrawerVisible = false
-                        isConfirmationVisible = true
+                        onDelete()
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -339,25 +342,12 @@ fun WorkoutExerciseCard(
             }
         }
     }
-
-    // Delete Confirmation
-    if (isConfirmationVisible) {
-        ConfirmationBottomDrawer(
-            message = "Are you sure you want to remove this exercise?",
-            onConfirm = {
-                onDelete()
-                isConfirmationVisible = false
-            },
-            onCancel = { isConfirmationVisible = false }
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateExerciseDrawer(
-    viewModel: WorkoutExercisesViewModel,
-    exercisesMap: Map<String, Exercise>,
+    availableExercises: List<Exercise>,
     onClose: () -> Unit,
     onCreate: (String, Int, Int) -> Unit
 ) {
@@ -406,13 +396,13 @@ fun CreateExerciseDrawer(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                androidx.compose.material3.DropdownMenu(
+                DropdownMenu(
                     expanded = isDropdownExpanded,
                     onDismissRequest = { isDropdownExpanded = false },
                     modifier = Modifier.fillMaxWidth(0.9f)
                 ) {
-                    exercisesMap.values.forEach { exercise ->
-                        androidx.compose.material3.DropdownMenuItem(
+                    availableExercises.forEach { exercise ->
+                        DropdownMenuItem(
                             text = { Text(exercise.name) },
                             onClick = {
                                 selectedExercise = exercise
@@ -459,7 +449,7 @@ fun CreateExerciseDrawer(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Buttons: Cancel and Save
+            // Buttons: Cancel and Add
             Row(
                 horizontalArrangement = Arrangement.End,
                 modifier = Modifier.fillMaxWidth()
@@ -495,32 +485,30 @@ fun CreateExerciseDrawer(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateExerciseDrawer(
-    viewModel: WorkoutExercisesViewModel,
-    selectedWorkoutExercise: WorkoutExercise,
-    exercisesMap: Map<String, Exercise>,
+    selectedExercise: WorkoutExercise,
+    availableExercises: List<Exercise>,
     onClose: () -> Unit,
     onUpdate: (String, Int, Int) -> Unit
 ) {
-    // Pre-select the current exercise
-    var selectedExercise by remember {
-        mutableStateOf(exercisesMap[selectedWorkoutExercise.exerciseId])
+    // Pre-select values from the current exercise
+    var currentExercise by remember {
+        mutableStateOf(availableExercises.find { it.id.toString() == selectedExercise.exercise.id })
     }
-
     var isDropdownExpanded by remember { mutableStateOf(false) }
-    var reps by remember { mutableStateOf(selectedWorkoutExercise.reps.toString()) }
-    var sets by remember { mutableStateOf(selectedWorkoutExercise.sets.toString()) }
+    var reps by remember { mutableStateOf(selectedExercise.reps.toString()) }
+    var sets by remember { mutableStateOf(selectedExercise.sets.toString()) }
     var isInputValid by remember { mutableStateOf(true) }  // Prefilled with valid data
     var hasChanges by remember { mutableStateOf(false) }
 
     // Validate input and check for changes whenever values change
-    LaunchedEffect(selectedExercise, sets, reps) {
-        isInputValid = selectedExercise != null &&
+    LaunchedEffect(currentExercise, sets, reps) {
+        isInputValid = currentExercise != null &&
                 sets.isNotBlank() && sets.toIntOrNull() != null && sets.toInt() > 0 &&
                 reps.isNotBlank() && reps.toIntOrNull() != null && reps.toInt() > 0
 
-        hasChanges = (selectedExercise?.id.toString() != selectedWorkoutExercise.exerciseId) ||
-                (sets.toIntOrNull() != selectedWorkoutExercise.sets) ||
-                (reps.toIntOrNull() != selectedWorkoutExercise.reps)
+        hasChanges = (currentExercise?.id.toString() != selectedExercise.exercise.id) ||
+                (sets.toIntOrNull() != selectedExercise.sets) ||
+                (reps.toIntOrNull() != selectedExercise.reps)
     }
 
     ModalBottomSheet(
@@ -537,10 +525,10 @@ fun UpdateExerciseDrawer(
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            // Exercise Selection Dropdown - Pre-selected with current exercise
+            // Exercise Selection Dropdown
             Box(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
-                    value = selectedExercise?.name ?: "Select Exercise",
+                    value = currentExercise?.name ?: "Select Exercise",
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Exercise") },
@@ -555,16 +543,16 @@ fun UpdateExerciseDrawer(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                androidx.compose.material3.DropdownMenu(
+                DropdownMenu(
                     expanded = isDropdownExpanded,
                     onDismissRequest = { isDropdownExpanded = false },
                     modifier = Modifier.fillMaxWidth(0.9f)
                 ) {
-                    exercisesMap.values.forEach { exercise ->
-                        androidx.compose.material3.DropdownMenuItem(
+                    availableExercises.forEach { exercise ->
+                        DropdownMenuItem(
                             text = { Text(exercise.name) },
                             onClick = {
-                                selectedExercise = exercise
+                                currentExercise = exercise
                                 isDropdownExpanded = false
                             }
                         )
@@ -574,7 +562,7 @@ fun UpdateExerciseDrawer(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Sets Input - Prefilled with current value
+            // Sets Input
             OutlinedTextField(
                 value = sets,
                 onValueChange = { sets = it },
@@ -591,7 +579,7 @@ fun UpdateExerciseDrawer(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Reps Input - Prefilled with current value
+            // Reps Input
             OutlinedTextField(
                 value = reps,
                 onValueChange = { reps = it },
@@ -623,7 +611,7 @@ fun UpdateExerciseDrawer(
                 Button(
                     onClick = {
                         if (isInputValid && hasChanges) {
-                            selectedExercise?.id?.let { exerciseId ->
+                            currentExercise?.id?.let { exerciseId ->
                                 onUpdate(
                                     exerciseId.toString(),
                                     sets.toInt(),

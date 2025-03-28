@@ -6,7 +6,6 @@ import com.neyra.gymapp.data.dao.WorkoutExerciseDao
 import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.data.repository.WorkoutRepositoryImpl
 import com.neyra.gymapp.domain.repository.WorkoutRepository
-import com.neyra.gymapp.openapi.apis.WorkoutExercisesApi
 import com.neyra.gymapp.openapi.apis.WorkoutsApi
 import dagger.Module
 import dagger.Provides
@@ -25,7 +24,6 @@ object WorkoutModule {
         workoutExerciseDao: WorkoutExerciseDao,
         exerciseDao: ExerciseDao,
         workoutsApi: WorkoutsApi,
-        workoutExercisesApi: WorkoutExercisesApi,
         networkManager: NetworkManager
     ): WorkoutRepository {
         return WorkoutRepositoryImpl(
@@ -33,7 +31,6 @@ object WorkoutModule {
             workoutExerciseDao = workoutExerciseDao,
             exerciseDao = exerciseDao,
             workoutsApi = workoutsApi,
-            workoutExercisesApi = workoutExercisesApi,
             networkManager = networkManager
         )
     }

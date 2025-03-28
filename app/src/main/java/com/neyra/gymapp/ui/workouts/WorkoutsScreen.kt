@@ -46,9 +46,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.neyra.gymapp.common.UiState
 import com.neyra.gymapp.domain.model.Workout
 import com.neyra.gymapp.ui.components.ConfirmationBottomDrawer
+import com.neyra.gymapp.ui.components.EmptyStateContent
 import com.neyra.gymapp.viewmodel.WorkoutsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,24 +59,20 @@ fun WorkoutsScreen(
     onBackPressed: () -> Unit,
     viewModel: WorkoutsViewModel = hiltViewModel()
 ) {
-    // Trigger fetching of workouts when the screen appears or programId changes
+    // Collect UI state
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Trigger workouts fetch when screen appears or training program changes
     LaunchedEffect(trainingProgramId) {
         viewModel.fetchWorkouts(trainingProgramId)
     }
 
-    val workoutsState by viewModel.workouts.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
-    val isCreateWorkoutDrawerVisible by viewModel.isCreateWorkoutDrawerVisible.collectAsState()
-    val isUpdateWorkoutDrawerVisible by viewModel.isUpdateWorkoutDrawerVisible.collectAsState()
-    val selectedWorkout by viewModel.selectedWorkout.collectAsState()
-
-    val snackbarHostState = remember { SnackbarHostState() }
-
     // Show error message in snackbar if present
-    LaunchedEffect(errorMessage) {
-        if (errorMessage != null) {
-            snackbarHostState.showSnackbar(errorMessage!!)
+    LaunchedEffect(uiState.errorMessage) {
+        if (uiState.errorMessage != null) {
+            snackbarHostState.showSnackbar(uiState.errorMessage!!)
+            viewModel.clearErrorMessage()
         }
     }
 
@@ -109,94 +105,54 @@ fun WorkoutsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when (val state = workoutsState) {
-                is UiState.Loading -> {
+            // Main content based on UI state
+            when {
+                uiState.isLoading && uiState.workouts.isEmpty() -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
 
-                is UiState.Success -> {
-                    if (state.data.isEmpty()) {
-                        // Empty state
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "No workouts yet",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Add your first workout to get started",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { viewModel.showCreateWorkoutDrawer() }) {
-                                Text("Add Workout")
-                            }
-                        }
-                    } else {
-                        // List of workouts
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp)
-                        ) {
-                            items(state.data) { workout ->
-                                WorkoutCard(
-                                    workout = workout,
-                                    onClick = { onWorkoutSelected(workout.id ?: "") },
-                                    onEdit = {
-                                        viewModel.setSelectedWorkout(workout)
-                                        viewModel.showUpdateWorkoutDrawer()
-                                    },
-                                    onDelete = {
-                                        workout.id?.let { id ->
-                                            viewModel.deleteWorkout(trainingProgramId, id)
-                                        }
-                                    }
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-                        }
-                    }
+                uiState.workouts.isEmpty() -> {
+                    EmptyStateContent(
+                        title = "No workouts yet",
+                        message = "Add your first workout to get started",
+                        buttonText = "Add Workout",
+                        onButtonClick = { viewModel.showCreateWorkoutDrawer() }
+                    )
                 }
 
-                is UiState.Error -> {
-                    // Error state
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "Something went wrong",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = state.message,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { viewModel.fetchWorkouts(trainingProgramId) }) {
-                            Text("Retry")
+                else -> {
+                    WorkoutList(
+                        workouts = uiState.workouts,
+                        onWorkoutSelected = onWorkoutSelected,
+                        onEditWorkout = { workout ->
+                            viewModel.setSelectedWorkout(workout)
+                            viewModel.showUpdateWorkoutDrawer()
+                        },
+                        onDeleteWorkout = { workout ->
+                            viewModel.setSelectedWorkout(workout)
+                            viewModel.showDeleteConfirmation()
                         }
-                    }
+                    )
+                }
+            }
+
+            // Loading indicator overlay for operations
+            if (uiState.isLoading && uiState.workouts.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
             }
         }
 
         // Create Workout Drawer
-        if (isCreateWorkoutDrawerVisible) {
+        if (uiState.isCreateWorkoutDrawerVisible) {
             CreateWorkoutDrawer(
                 onCancel = { viewModel.hideCreateWorkoutDrawer() },
                 onCreate = { name -> viewModel.createWorkout(trainingProgramId, name) }
@@ -204,16 +160,56 @@ fun WorkoutsScreen(
         }
 
         // Update Workout Drawer
-        if (isUpdateWorkoutDrawerVisible && selectedWorkout != null) {
+        if (uiState.isUpdateWorkoutDrawerVisible && uiState.selectedWorkout != null) {
             UpdateWorkoutDrawer(
-                workout = selectedWorkout!!,
+                workout = uiState.selectedWorkout!!,
                 onCancel = { viewModel.hideUpdateWorkoutDrawer() },
                 onUpdate = { updatedName ->
-                    selectedWorkout?.id?.let { id ->
+                    uiState.selectedWorkout?.id?.let { id ->
                         viewModel.updateWorkout(trainingProgramId, id, updatedName)
                     }
                 }
             )
+        }
+
+        // Delete Confirmation
+        if (uiState.isDeleteConfirmationVisible && uiState.selectedWorkout != null) {
+            ConfirmationBottomDrawer(
+                message = "Are you sure you want to delete this workout?",
+                onConfirm = {
+                    uiState.selectedWorkout?.id?.let { id ->
+                        viewModel.deleteWorkout(trainingProgramId, id)
+                    }
+                },
+                onCancel = { viewModel.hideDeleteConfirmation() }
+            )
+        }
+    }
+}
+
+@Composable
+fun WorkoutList(
+    workouts: List<Workout>,
+    onWorkoutSelected: (String) -> Unit,
+    onEditWorkout: (Workout) -> Unit,
+    onDeleteWorkout: (Workout) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        items(
+            items = workouts,
+            key = { it.id ?: it.hashCode().toString() }
+        ) { workout ->
+            WorkoutCard(
+                workout = workout,
+                onClick = { workout.id?.let { onWorkoutSelected(it) } },
+                onEdit = { onEditWorkout(workout) },
+                onDelete = { onDeleteWorkout(workout) }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -227,7 +223,6 @@ fun WorkoutCard(
     onDelete: () -> Unit
 ) {
     var isDrawerVisible by remember { mutableStateOf(false) }
-    var isConfirmationVisible by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -269,7 +264,7 @@ fun WorkoutCard(
                 }
             }
 
-            // Menu Button with 3 Dots
+            // Menu Button
             IconButton(onClick = { isDrawerVisible = true }) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
@@ -307,7 +302,7 @@ fun WorkoutCard(
                 TextButton(
                     onClick = {
                         isDrawerVisible = false
-                        isConfirmationVisible = true
+                        onDelete()
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -319,18 +314,6 @@ fun WorkoutCard(
                 }
             }
         }
-    }
-
-    // Delete Confirmation
-    if (isConfirmationVisible) {
-        ConfirmationBottomDrawer(
-            message = "Are you sure you want to delete this workout?",
-            onConfirm = {
-                onDelete()
-                isConfirmationVisible = false
-            },
-            onCancel = { isConfirmationVisible = false }
-        )
     }
 }
 

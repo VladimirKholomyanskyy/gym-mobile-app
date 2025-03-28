@@ -2,7 +2,6 @@ package com.neyra.gymapp.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.neyra.gymapp.common.UiState
 import com.neyra.gymapp.domain.error.DomainError
 import com.neyra.gymapp.domain.model.Workout
 import com.neyra.gymapp.domain.model.WorkoutExercise
@@ -12,13 +11,31 @@ import com.neyra.gymapp.domain.usecase.GetWorkoutExercisesUseCase
 import com.neyra.gymapp.domain.usecase.GetWorkoutsUseCase
 import com.neyra.gymapp.domain.usecase.ReorderWorkoutExerciseUseCase
 import com.neyra.gymapp.domain.usecase.UpdateWorkoutExerciseUseCase
+import com.neyra.gymapp.openapi.models.Exercise
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
+
+/**
+ * Unified UI state for workout exercises screen
+ */
+data class WorkoutExercisesUiState(
+    val workout: Workout? = null,
+    val exercises: List<WorkoutExercise> = emptyList(),
+    val selectedExercise: WorkoutExercise? = null,
+    val availableExercises: Map<String, Exercise> = emptyMap(),
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val isCreateExerciseDrawerVisible: Boolean = false,
+    val isUpdateExerciseDrawerVisible: Boolean = false,
+    val isDeleteConfirmationVisible: Boolean = false
+)
 
 @HiltViewModel
 class WorkoutExercisesViewModel @Inject constructor(
@@ -30,62 +47,38 @@ class WorkoutExercisesViewModel @Inject constructor(
     private val reorderWorkoutExerciseUseCase: ReorderWorkoutExerciseUseCase
 ) : ViewModel() {
 
-    // Current workout
-    private val _workout = MutableStateFlow<UiState<Workout>>(UiState.Loading)
-    val workout: StateFlow<UiState<Workout>> = _workout.asStateFlow()
+    // Unified UI state
+    private val _uiState = MutableStateFlow(WorkoutExercisesUiState())
+    val uiState: StateFlow<WorkoutExercisesUiState> = _uiState.asStateFlow()
 
-    // Workout exercises
-    private val _workoutExercises =
-        MutableStateFlow<UiState<List<WorkoutExercise>>>(UiState.Loading)
-    val workoutExercises: StateFlow<UiState<List<WorkoutExercise>>> =
-        _workoutExercises.asStateFlow()
-
-    // Exercise mapping for UI (id -> Exercise)
-    private val _exercisesMap =
-        MutableStateFlow<Map<String, com.neyra.gymapp.openapi.models.Exercise>>(emptyMap())
-    val exercisesMap: StateFlow<Map<String, com.neyra.gymapp.openapi.models.Exercise>> =
-        _exercisesMap.asStateFlow()
-
-    // Selected workout exercise for edit/delete operations
-    private val _selectedWorkoutExercise = MutableStateFlow<WorkoutExercise?>(null)
-    val selectedWorkoutExercise: StateFlow<WorkoutExercise?> =
-        _selectedWorkoutExercise.asStateFlow()
-
-    // UI state flags
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
-
-    private val _isCreateWorkoutExerciseDrawerVisible = MutableStateFlow(false)
-    val isCreateWorkoutExerciseDrawerVisible: StateFlow<Boolean> =
-        _isCreateWorkoutExerciseDrawerVisible.asStateFlow()
-
-    private val _isUpdateWorkoutExerciseDrawerVisible = MutableStateFlow(false)
-    val isUpdateWorkoutExerciseDrawerVisible: StateFlow<Boolean> =
-        _isUpdateWorkoutExerciseDrawerVisible.asStateFlow()
-
-    // Current workout ID
+    // Current workout ID being displayed
     private var currentWorkoutId: String? = null
 
-    // Fetch workout and its exercises
+    /**
+     * Loads workout details and its exercises
+     */
     fun fetch(workoutId: String) {
         currentWorkoutId = workoutId
-
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             // Load workout details
             try {
                 val workout = getWorkoutsUseCase.getById(workoutId)
                 if (workout != null) {
-                    _workout.value = UiState.Success(workout)
+                    _uiState.update { it.copy(workout = workout) }
                 } else {
-                    _workout.value = UiState.Error("Workout not found")
+                    _uiState.update {
+                        it.copy(
+                            errorMessage = "Workout not found",
+                            isLoading = false
+                        )
+                    }
+                    return@launch
                 }
             } catch (e: Exception) {
                 handleError(e)
+                return@launch
             }
 
             // Load workout exercises
@@ -93,23 +86,29 @@ class WorkoutExercisesViewModel @Inject constructor(
         }
     }
 
-    // Fetch workout exercises
+    /**
+     * Fetches exercises for the current workout
+     */
     private fun fetchWorkoutExercises(workoutId: String) {
         viewModelScope.launch {
-            _workoutExercises.value = UiState.Loading
-
             getWorkoutExercisesUseCase(workoutId)
                 .catch { exception ->
                     handleError(exception)
                 }
                 .collect { exercises ->
-                    _workoutExercises.value = UiState.Success(exercises)
-                    _isLoading.value = false
+                    _uiState.update {
+                        it.copy(
+                            exercises = exercises,
+                            isLoading = false
+                        )
+                    }
                 }
         }
     }
 
-    // Add exercise to workout
+    /**
+     * Adds a new exercise to the workout
+     */
     fun addExerciseToWorkout(
         workoutId: String,
         exerciseId: String,
@@ -117,7 +116,7 @@ class WorkoutExercisesViewModel @Inject constructor(
         reps: Int
     ) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             try {
                 val result = addExerciseToWorkoutUseCase(
@@ -128,31 +127,25 @@ class WorkoutExercisesViewModel @Inject constructor(
                 )
 
                 result.onSuccess { newExercise ->
-                    _isCreateWorkoutExerciseDrawerVisible.value = false
-
-                    // Update workout exercises list
-                    when (val currentExercises = _workoutExercises.value) {
-                        is UiState.Success -> {
-                            _workoutExercises.value =
-                                UiState.Success(currentExercises.data + newExercise)
-                        }
-
-                        else -> fetchWorkoutExercises(workoutId)
+                    _uiState.update { state ->
+                        state.copy(
+                            exercises = state.exercises + newExercise,
+                            isCreateExerciseDrawerVisible = false,
+                            isLoading = false
+                        )
                     }
-
-                    _errorMessage.value = null
                 }.onFailure { error ->
                     handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
 
-    // Update workout exercise
+    /**
+     * Updates an existing workout exercise
+     */
     fun updateExerciseInWorkout(
         workoutId: String,
         workoutExerciseId: String,
@@ -161,7 +154,7 @@ class WorkoutExercisesViewModel @Inject constructor(
         reps: Int
     ) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             try {
                 val result = updateWorkoutExerciseUseCase(
@@ -171,96 +164,83 @@ class WorkoutExercisesViewModel @Inject constructor(
                 )
 
                 result.onSuccess { updatedExercise ->
-                    _isUpdateWorkoutExerciseDrawerVisible.value = false
-
-                    // Update workout exercises list
-                    when (val currentExercises = _workoutExercises.value) {
-                        is UiState.Success -> {
-                            val updatedList = currentExercises.data.map {
+                    _uiState.update { state ->
+                        state.copy(
+                            exercises = state.exercises.map {
                                 if (it.id == updatedExercise.id) updatedExercise else it
-                            }
-                            _workoutExercises.value = UiState.Success(updatedList)
-                        }
-
-                        else -> fetchWorkoutExercises(workoutId)
+                            },
+                            isUpdateExerciseDrawerVisible = false,
+                            isLoading = false
+                        )
                     }
-
-                    _errorMessage.value = null
                 }.onFailure { error ->
                     handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
 
-    // Remove exercise from workout
+    /**
+     * Removes an exercise from the workout
+     */
     fun removeExerciseFromWorkout(workoutExerciseId: String) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             try {
                 val result = deleteWorkoutExerciseUseCase(workoutExerciseId)
 
                 result.onSuccess { success ->
                     if (success) {
-                        // Update workout exercises list
-                        when (val currentExercises = _workoutExercises.value) {
-                            is UiState.Success -> {
-                                val updatedList = currentExercises.data.filter {
-                                    it.id != workoutExerciseId
-                                }
-                                _workoutExercises.value = UiState.Success(updatedList)
-                            }
-
-                            else -> currentWorkoutId?.let { fetchWorkoutExercises(it) }
+                        _uiState.update { state ->
+                            state.copy(
+                                exercises = state.exercises.filter { it.id != workoutExerciseId },
+                                isDeleteConfirmationVisible = false,
+                                isLoading = false
+                            )
                         }
-
-                        _errorMessage.value = null
                     }
                 }.onFailure { error ->
                     handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
 
-    // Reorder workout exercise
+    /**
+     * Reorders an exercise within the workout
+     */
     fun reorderExercise(workoutExerciseId: String, newPosition: Int) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             try {
                 val result = reorderWorkoutExerciseUseCase(workoutExerciseId, newPosition)
 
                 result.onSuccess { success ->
                     if (success) {
-                        // Refresh the workout exercises list
+                        // Refresh exercises to get updated positions
                         currentWorkoutId?.let { fetchWorkoutExercises(it) }
-                        _errorMessage.value = null
                     }
                 }.onFailure { error ->
                     handleError(error)
                 }
             } catch (e: Exception) {
                 handleError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
 
-    // Start a workout session
+    /**
+     * Starts a workout session
+     */
     fun startWorkoutSession(workoutId: String, onStartWorkoutSession: (String) -> Unit) {
         viewModelScope.launch {
-            _isLoading.value = true
+            _uiState.update { it.copy(isLoading = true) }
 
             try {
                 // In a real implementation, this would call a use case to start a workout session
@@ -271,37 +251,50 @@ class WorkoutExercisesViewModel @Inject constructor(
             } catch (e: Exception) {
                 handleError(e)
             } finally {
-                _isLoading.value = false
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
 
-    // Set selected workout exercise for edit/delete operations
+    // UI state handlers
     fun setSelectedWorkoutExercise(exercise: WorkoutExercise) {
-        _selectedWorkoutExercise.value = exercise
+        _uiState.update { it.copy(selectedExercise = exercise) }
     }
 
-    // Show/hide create workout exercise drawer
     fun showCreateWorkoutExerciseDrawer() {
-        _isCreateWorkoutExerciseDrawerVisible.value = true
+        _uiState.update { it.copy(isCreateExerciseDrawerVisible = true) }
     }
 
     fun hideCreateWorkoutExerciseDrawerVisible() {
-        _isCreateWorkoutExerciseDrawerVisible.value = false
+        _uiState.update { it.copy(isCreateExerciseDrawerVisible = false) }
     }
 
-    // Show/hide update workout exercise drawer
     fun showUpdateWorkoutExerciseDrawer() {
-        _isUpdateWorkoutExerciseDrawerVisible.value = true
+        _uiState.update { it.copy(isUpdateExerciseDrawerVisible = true) }
     }
 
     fun hideUpdateWorkoutExerciseDrawer() {
-        _isUpdateWorkoutExerciseDrawerVisible.value = false
+        _uiState.update { it.copy(isUpdateExerciseDrawerVisible = false) }
     }
 
-    // Error handling
+    fun showDeleteConfirmation() {
+        _uiState.update { it.copy(isDeleteConfirmationVisible = true) }
+    }
+
+    fun hideDeleteConfirmation() {
+        _uiState.update { it.copy(isDeleteConfirmationVisible = false) }
+    }
+
+    fun clearErrorMessage() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    /**
+     * Centralized error handling
+     */
     private fun handleError(error: Throwable) {
-        _isLoading.value = false
+        Timber.e(error, "Error in WorkoutExercisesViewModel")
+
         val errorMessage = when (error) {
             is DomainError.ValidationError ->
                 "Validation error: ${error.message}"
@@ -319,18 +312,14 @@ class WorkoutExercisesViewModel @Inject constructor(
                 error.message
 
             else ->
-                "An unexpected error occurred: ${error.message}"
+                "An unexpected error occurred: ${error.message ?: "Unknown error"}"
         }
 
-        _errorMessage.value = errorMessage
-
-        // Update the appropriate state flow based on the current operation
-        if (_workout.value is UiState.Loading) {
-            _workout.value = UiState.Error(errorMessage)
-        }
-
-        if (_workoutExercises.value is UiState.Loading) {
-            _workoutExercises.value = UiState.Error(errorMessage)
+        _uiState.update {
+            it.copy(
+                errorMessage = errorMessage,
+                isLoading = false
+            )
         }
     }
 }
