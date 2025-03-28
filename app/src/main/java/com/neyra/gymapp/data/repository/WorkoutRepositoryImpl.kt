@@ -4,20 +4,21 @@ import com.neyra.gymapp.data.dao.ExerciseDao
 import com.neyra.gymapp.data.dao.WorkoutDao
 import com.neyra.gymapp.data.dao.WorkoutExerciseDao
 import com.neyra.gymapp.data.entities.SyncStatus
+import com.neyra.gymapp.data.entities.WorkoutExerciseEntity
 import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.domain.error.DomainError
 import com.neyra.gymapp.domain.error.runDomainCatching
 import com.neyra.gymapp.domain.mapper.toDomain
-import com.neyra.gymapp.domain.mapper.toDomainExerciseList
 import com.neyra.gymapp.domain.mapper.toEntity
 import com.neyra.gymapp.domain.model.Workout
+import com.neyra.gymapp.domain.model.WorkoutExercise
 import com.neyra.gymapp.domain.repository.WorkoutRepository
 import com.neyra.gymapp.openapi.apis.WorkoutsApi
 import com.neyra.gymapp.openapi.models.CreateWorkoutRequest
 import com.neyra.gymapp.openapi.models.PatchWorkoutRequest
 import com.neyra.gymapp.openapi.models.ReorderWorkoutRequest
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
@@ -35,15 +36,15 @@ class WorkoutRepositoryImpl @Inject constructor(
 ) : WorkoutRepository {
 
     override suspend fun createWorkout(workout: Workout): Result<Workout> = runDomainCatching {
-        Timber.d("Creating workout: ${workout.name}")
+        Timber.d("Creating workout: ${workout.name} for program: ${workout.trainingProgramId}")
         validateWorkout(workout)
+
         // Convert to entity and save locally
         val workoutEntity = workout.toEntity()
         workoutDao.insert(workoutEntity)
-        Timber.d("Saved training program locally with ID: ${workoutEntity.id}")
 
+        // Try to sync with server if online
         if (networkManager.isOnline()) {
-            Timber.d("Network available, syncing program with server")
             try {
                 val request = CreateWorkoutRequest(name = workout.name)
                 val response = workoutsApi.addWorkoutToProgram(
@@ -53,19 +54,21 @@ class WorkoutRepositoryImpl @Inject constructor(
 
                 if (response.isSuccessful && response.body() != null) {
                     val remoteId = response.body()!!.id.toString()
-                    Timber.d("Workout synced successfully with remote ID: $remoteId")
+                    val createdAt = response.body()!!.createdAt.toInstant().toEpochMilli()
+                    val updatedAt = response.body()!!.updatedAt.toInstant().toEpochMilli()
+
                     workoutDao.updateIdAndSyncStatus(
                         workoutEntity.id,
                         remoteId,
                         SyncStatus.SYNCED,
-                        response.body()!!.createdAt.toInstant().toEpochMilli(),
-                        response.body()!!.updatedAt.toInstant().toEpochMilli()
+                        createdAt,
+                        updatedAt
                     )
+
                     return@runDomainCatching workout.copy(id = remoteId)
                 } else {
                     val statusCode = response.code()
                     val errorBody = response.errorBody()?.string() ?: "Unknown error"
-                    Timber.w("Server responded with error $statusCode: $errorBody")
                     throw DomainError.fromHttpStatus(statusCode, errorBody)
                         .withContext("workoutName", workout.name)
                         .withContext("trainingProgramId", workout.trainingProgramId)
@@ -73,30 +76,46 @@ class WorkoutRepositoryImpl @Inject constructor(
             } catch (e: Exception) {
                 if (e is DomainError) throw e
 
-                Timber.e(e, "Network error while syncing program")
-                // Continue with local save if network operation failed
-                Timber.d("Continuing with local entity despite sync failure")
+                Timber.e(e, "Network error during workout creation")
+                // Continue with local entity if network sync failed
             }
-        } else {
-            Timber.d("No network connection, skipping remote sync")
         }
+
         // Return the locally created workout
-        workoutEntity.copy(id = workoutEntity.id).toDomain()
+        workout.copy(id = workoutEntity.id)
     }
 
-    override suspend fun updateWorkout(workoutId: String, newName: String): Result<Workout> {
-        return try {
+    override suspend fun updateWorkout(workoutId: String, newName: String): Result<Workout> =
+        runDomainCatching {
+            if (newName.isBlank() || newName.length > Workout.MAX_NAME_LENGTH) {
+                throw DomainError.ValidationError.InvalidName(
+                    newName,
+                    "Workout name must be between 1 and ${Workout.MAX_NAME_LENGTH} characters"
+                )
+            }
+
             val rowsUpdated = workoutDao.updateName(
-                workoutId, newName,
+                workoutId,
+                newName,
                 SyncStatus.PENDING_UPDATE,
                 System.currentTimeMillis()
             )
-            if (rowsUpdated > 0) {
-                // Fetch and return the updated entity
-                val updatedWorkout = workoutDao.getWorkoutById(workoutId) ?: return Result.failure(
-                    Exception("Workout not found after update")
-                )
-                if (networkManager.isOnline()) {
+
+            if (rowsUpdated <= 0) {
+                throw DomainError.DataError.NotFound()
+                    .withContext("entityType", "Workout")
+                    .withContext("id", workoutId)
+            }
+
+            // Fetch updated entity
+            val updatedWorkout = workoutDao.getWorkoutById(workoutId)
+                ?: throw DomainError.DataError.NotFound()
+                    .withContext("entityType", "Workout")
+                    .withContext("id", workoutId)
+
+            // Try to sync with server if online
+            if (networkManager.isOnline()) {
+                try {
                     val response = workoutsApi.updateWorkout(
                         UUID.fromString(updatedWorkout.trainingProgramId),
                         UUID.fromString(workoutId),
@@ -104,136 +123,143 @@ class WorkoutRepositoryImpl @Inject constructor(
                     )
 
                     if (response.isSuccessful) {
-                        // Mark as synced
                         workoutDao.updateSyncStatus(workoutId, SyncStatus.SYNCED)
                     }
-
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to sync workout update")
+                    // Continue with local update
                 }
-                Result.success(updatedWorkout.toDomain())
-            } else {
-                Result.failure(Exception("No rows updated. Training program may not exist."))
             }
-        } catch (e: Exception) {
-            Result.failure(e)
+
+            updatedWorkout.toDomain()
         }
-    }
 
-    override suspend fun deleteWorkout(workoutId: String): Result<Boolean> {
-        return try {
-            // Get workout details before deletion
-            val workout = workoutDao.getWorkoutById(workoutId)
-                ?: return Result.failure(IllegalArgumentException("Workout not found"))
+    override suspend fun deleteWorkout(workoutId: String): Result<Boolean> = runDomainCatching {
+        // Get workout details before deletion
+        val workout = workoutDao.getWorkoutById(workoutId)
+            ?: throw DomainError.DataError.NotFound()
+                .withContext("entityType", "Workout")
+                .withContext("id", workoutId)
 
-            // Delete locally
-            workoutDao.delete(workoutId)
+        // Delete locally
+        workoutDao.delete(workoutId)
 
-            // If online, sync with server
-            if (networkManager.isOnline()) {
+        // If online, sync with server
+        if (networkManager.isOnline()) {
+            try {
                 workoutsApi.deleteWorkout(
                     UUID.fromString(workout.trainingProgramId),
                     UUID.fromString(workoutId)
                 )
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to sync workout deletion")
+                // Continue with local deletion
             }
-
-            Result.success(true)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        true
     }
 
     override suspend fun getWorkout(workoutId: String): Workout? {
         // Get the workout entity
         val workoutEntity = workoutDao.getWorkoutById(workoutId) ?: return null
 
-        // Get the exercises for this workout - collect first emission
-        val exerciseList = workoutExerciseDao.getAllByWorkoutId(workoutId)
-            .map { entities ->
-                // Create a map of exercise IDs to their info (name, primary muscle)
-                val exerciseInfoMap = entities.associate { entity ->
-                    val exercise = exerciseDao.getExerciseById(entity.exerciseId)
-                    entity.exerciseId to Pair(
-                        exercise?.name ?: "",
-                        exercise?.primaryMuscle ?: ""
-                    )
-                }
-
-                // Convert entities to domain models with exercise info
-                entities.toDomainExerciseList(exerciseInfoMap)
-            }
-            .first() // Collect the first emission
+        // Get exercises for this workout
+        val exercises = workoutExerciseDao.getAllByWorkoutId(workoutId)
+            .map { mapExerciseEntitiesToDomain(it) }
+            .firstOrNull() ?: emptyList()
 
         // Return the domain model with exercises
-        return workoutEntity.toDomain(exerciseList)
+        return workoutEntity.toDomain(exercises)
     }
 
     override fun getWorkouts(
         trainingProgramId: String,
         sortBy: WorkoutRepository.SortCriteria
     ): Flow<List<Workout>> {
-        // Get workout entities
-        return workoutDao.getWorkoutsByTrainingProgramId(trainingProgramId)
+        // Get workouts and their exercises
+        val workoutsFlow = workoutDao.getWorkoutsByTrainingProgramId(trainingProgramId)
+
+        return workoutsFlow
             .map { workouts ->
-                // Create a list of workout IDs
-                val workoutIds = workouts.map { it.id }
+                workouts.map { workout ->
+                    // For each workout, create a workout domain model with its exercises
+                    val exercisesFlow = workoutExerciseDao.getAllByWorkoutId(workout.id)
+                        .map { mapExerciseEntitiesToDomain(it) }
+                        .catch { emit(emptyList()) }
 
-                // For each workout, get its exercises
-                val workoutsWithExercises = workouts.map { workout ->
-                    // Get exercises for this workout
-                    val exercises =
-                        workoutExerciseDao.getAllByWorkoutId(workout.id).map { entities ->
-                            // Create a map of exercise IDs to their info
-                            val exerciseInfoMap = entities.associate { entity ->
-                                val exercise = exerciseDao.getExerciseById(entity.exerciseId)
-                                entity.exerciseId to Pair(
-                                    exercise?.name ?: "",
-                                    exercise?.primaryMuscle ?: ""
-                                )
-                            }
-
-                            // Convert entities to domain models
-                            entities.toDomainExerciseList(exerciseInfoMap)
-                        }
-
-                    // Convert workout entity to domain model
-                    workout.toDomain(exercises.firstOrNull() ?: emptyList())
+                    // Return a Pair of the workout entity and its exercises flow
+                    workout to exercisesFlow
                 }
-
+            }
+            .map { workoutPairs ->
+                // For each workout pair, get the exercises and create the domain model
+                workoutPairs.map { (workoutEntity, exercisesFlow) ->
+                    val exercises = exercisesFlow.firstOrNull() ?: emptyList()
+                    workoutEntity.toDomain(exercises)
+                }
+            }
+            .map { workouts ->
                 // Apply sorting based on criteria
                 when (sortBy) {
-                    WorkoutRepository.SortCriteria.POSITION ->
-                        workoutsWithExercises.sortedBy { it.position }
-
-                    WorkoutRepository.SortCriteria.NAME ->
-                        workoutsWithExercises.sortedBy { it.name }
-
-                    WorkoutRepository.SortCriteria.EXERCISE_COUNT ->
-                        workoutsWithExercises.sortedByDescending { it.exercises.size }
+                    WorkoutRepository.SortCriteria.POSITION -> workouts.sortedBy { it.position }
+                    WorkoutRepository.SortCriteria.NAME -> workouts.sortedBy { it.name }
+                    WorkoutRepository.SortCriteria.EXERCISE_COUNT -> workouts.sortedByDescending { it.exercises.size }
                 }
+            }
+            .catch { e ->
+                Timber.e(e, "Error loading workouts")
+                emit(emptyList())
             }
     }
 
-    override suspend fun reorderWorkout(workoutId: String, newPosition: Int): Result<Boolean> {
-        return try {
+    override suspend fun reorderWorkout(workoutId: String, newPosition: Int): Result<Boolean> =
+        runDomainCatching {
+            if (newPosition < 0) {
+                throw DomainError.ValidationError.InvalidName(
+                    "Position",
+                    "Position cannot be negative"
+                )
+            }
+
             // Get workout details
             val workout = workoutDao.getWorkoutById(workoutId)
-                ?: return Result.failure(IllegalArgumentException("Workout not found"))
+                ?: throw DomainError.DataError.NotFound()
+                    .withContext("entityType", "Workout")
+                    .withContext("id", workoutId)
 
             // Update position locally
             workoutDao.updatePosition(workoutId, newPosition)
 
             // If online, sync with server
             if (networkManager.isOnline()) {
-                val request = ReorderWorkoutRequest(position = newPosition)
-                workoutsApi.reorderWorkout(
-                    UUID.fromString(workout.trainingProgramId),
-                    UUID.fromString(workoutId),
-                    request
-                )
+                try {
+                    val request = ReorderWorkoutRequest(position = newPosition)
+                    workoutsApi.reorderWorkout(
+                        UUID.fromString(workout.trainingProgramId),
+                        UUID.fromString(workoutId),
+                        request
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to sync workout reordering")
+                    // Continue with local update
+                }
             }
 
-            Result.success(true)
-        } catch (e: Exception) {
-            Result.failure(e)
+            true
+        }
+
+    /**
+     * Maps workout exercise entities to domain models with exercise information
+     */
+    private suspend fun mapExerciseEntitiesToDomain(entities: List<WorkoutExerciseEntity>): List<WorkoutExercise> {
+        // Create a map of exercise IDs to their info (name, primary muscle)
+        return entities.map { entity ->
+            val exercise = exerciseDao.getExerciseById(entity.exerciseId)
+                ?: throw DomainError.DataError.NotFound()
+                    .withContext("entityType", "Exercise")
+                    .withContext("id", entity.exerciseId)
+            entity.toDomain(exercise)
         }
     }
 
@@ -242,7 +268,6 @@ class WorkoutRepositoryImpl @Inject constructor(
      * Throws appropriate domain errors if validation fails.
      */
     private fun validateWorkout(workout: Workout) {
-        // Name validation
         if (workout.name.isBlank()) {
             throw DomainError.ValidationError.InvalidName(
                 workout.name,
@@ -257,5 +282,11 @@ class WorkoutRepositoryImpl @Inject constructor(
             )
         }
 
+        if (workout.position < 0) {
+            throw DomainError.ValidationError.InvalidName(
+                "Position",
+                "Position cannot be negative"
+            )
+        }
     }
 }
