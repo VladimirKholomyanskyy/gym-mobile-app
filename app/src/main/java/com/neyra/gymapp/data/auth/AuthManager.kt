@@ -18,11 +18,13 @@ import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.openapi.apis.AuthApi
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -197,58 +199,103 @@ class AuthManager @Inject constructor(
         if (!networkManager.isOnline()) {
             return Result.failure(Exception("Cannot sign in while offline"))
         }
-        return try {
-            val result = withContext(Dispatchers.IO) {
-                suspendCancellableCoroutine { continuation ->
-                    Amplify.Auth.signIn(
-                        username,
-                        password,
-                        { continuation.resume(it) },
-                        { continuation.resumeWithException(it) }
-                    )
-                }
-            }
 
-            if (result.isSignedIn) {
-                val session = getAuthSession()
-                val userId = session.userSubId ?: ""
-
-                // Save credentials for offline use
-                val token = session.accessToken
-                if (token != null && userId.isNotEmpty()) {
-                    secureStorage.saveToken(token)
-                    secureStorage.saveUserId(userId)
-                }
-
-                tokenExpirationTime = System.currentTimeMillis() + TOKEN_VALIDITY_PERIOD
-                _authState.value = AuthState.Authenticated(userId)
-                _offlineMode.value = false  // We're online now
-            }
-
-            Result.success(result)
+        try {
+            // First attempt to sign in
+            return trySignIn(username, password)
         } catch (e: Exception) {
-            Log.e(TAG, "Sign in failed", e)
+            // Check if this is the "already signed in" error
+            if (e.message?.contains("SignedInException") == true ||
+                e.toString().contains("SignedInException")
+            ) {
 
-            // Handle specific Cognito errors
-            val errorMessage = when {
-                e.message?.contains("UserNotConfirmedException") == true ->
-                    "User is not confirmed. Please check your email for confirmation code."
+                Timber.d("User already signed in, attempting to sign out and retry")
 
-                e.message?.contains("NotAuthorizedException") == true ->
-                    "Incorrect username or password"
+                // Try to sign out and retry sign in
+                try {
+                    // Force sign out
+                    withContext(Dispatchers.IO) {
+                        suspendCancellableCoroutine<Unit> { continuation ->
+                            Amplify.Auth.signOut {
+                                continuation.resume(Unit)
+                            }
+                        }
+                    }
 
-                e.message?.contains("UserNotFoundException") == true ->
-                    "User does not exist"
+                    // Clear local storage
+                    secureStorage.clearAll()
 
-                e.message?.contains("network") == true ||
-                        e.message?.contains("connect") == true ->
-                    "Network error. Please check your connection."
+                    // Wait a brief moment to ensure sign out completes
+                    delay(500)
 
-                else -> e.message ?: "Authentication failed"
+                    // Try sign in again
+                    return trySignIn(username, password)
+                } catch (retryEx: Exception) {
+                    Timber.e(retryEx, "Failed to retry sign in after sign out")
+
+                    val errorMessage =
+                        "Failed to sign in after signing out previous user: ${retryEx.message}"
+                    _authState.value = AuthState.Error(errorMessage)
+                    return Result.failure(Exception(errorMessage))
+                }
+            } else {
+                // Handle other errors as before
+                val errorMessage = processAuthError(e)
+                _authState.value = AuthState.Error(errorMessage)
+                return Result.failure(Exception(errorMessage))
+            }
+        }
+    }
+
+    // Helper method to attempt sign in and process successful result
+    private suspend fun trySignIn(username: String, password: String): Result<AuthSignInResult> {
+        val result = withContext(Dispatchers.IO) {
+            suspendCancellableCoroutine { continuation ->
+                Amplify.Auth.signIn(
+                    username,
+                    password,
+                    { continuation.resume(it) },
+                    { continuation.resumeWithException(it) }
+                )
+            }
+        }
+
+        if (result.isSignedIn) {
+            val session = getAuthSession()
+            val userId = session.userSubId ?: ""
+
+            // Save credentials for offline use
+            val token = session.accessToken
+            if (token != null && userId.isNotEmpty()) {
+                secureStorage.saveToken(token)
+                secureStorage.saveUserId(userId)
             }
 
-            _authState.value = AuthState.Error(errorMessage)
-            Result.failure(Exception(errorMessage))
+            tokenExpirationTime = System.currentTimeMillis() + TOKEN_VALIDITY_PERIOD
+            _authState.value = AuthState.Authenticated(userId)
+            _offlineMode.value = false  // We're online now
+        }
+
+        return Result.success(result)
+    }
+
+    // Helper method to process auth errors into user-friendly messages
+    private fun processAuthError(e: Exception): String {
+        return when {
+            e.message?.contains("UserNotConfirmedException") == true ->
+                "User is not confirmed. Please check your email for confirmation code."
+
+            e.message?.contains("NotAuthorizedException") == true ->
+                "Incorrect username or password"
+
+            e.message?.contains("UserNotFoundException") == true ->
+                "User does not exist"
+
+            e.message?.contains("network") == true ||
+                    e.message?.contains("connect") == true ->
+                "Network error. Please check your connection."
+
+            else -> e.message ?: "Authentication failed"
         }
     }
 

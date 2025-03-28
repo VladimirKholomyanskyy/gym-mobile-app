@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.neyra.gymapp.data.entities.SyncStatus
 import com.neyra.gymapp.data.entities.WorkoutExerciseEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -36,11 +37,31 @@ interface WorkoutExerciseDao {
     @Query("SELECT COUNT(*) FROM workout_exercises WHERE workoutId = :workoutId")
     suspend fun countByWorkoutId(workoutId: String): Int
 
-    @Query("UPDATE workout_exercises SET sets = :sets, reps = :reps WHERE id = :id")
-    suspend fun update(id: String, sets: Int, reps: Int)
+    @Query("UPDATE workout_exercises SET sets = :sets, reps = :reps, syncStatus = :syncStatus, position = :position WHERE id = :id")
+    suspend fun update(
+        id: String,
+        sets: Int,
+        reps: Int,
+        position: Int,
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE
+    ): Int
 
-    @Query("UPDATE workout_exercises SET position = :newPosition WHERE id = :id")
-    suspend fun updatePosition(id: String, newPosition: Int)
+    @Query("UPDATE workout_exercises SET syncStatus = :status WHERE id = :id")
+    suspend fun updateSyncStatus(id: String, status: SyncStatus): Int
+
+    @Query("UPDATE workout_exercises SET position = :newPosition, syncStatus = :syncStatus WHERE id = :id")
+    suspend fun updatePosition(
+        id: String,
+        newPosition: Int,
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE
+    ): Int
+
+    @Query("UPDATE workout_exercises SET id = :newId, syncStatus = :syncStatus WHERE id = :oldId")
+    suspend fun updateIdAndSyncStatus(
+        oldId: String,
+        newId: String,
+        syncStatus: SyncStatus
+    ): Int
 
     @Transaction
     suspend fun reorderExercises(exerciseId: String, newPosition: Int) {
@@ -64,28 +85,40 @@ interface WorkoutExerciseDao {
     @Query(
         """
         UPDATE workout_exercises 
-        SET position = position - 1 
+        SET position = position - 1,
+        syncStatus = :syncStatus
         WHERE workoutId = :workoutId 
         AND position BETWEEN :start AND :end
     """
     )
-    suspend fun decrementPositions(workoutId: String, start: Int, end: Int)
+    suspend fun decrementPositions(
+        workoutId: String,
+        start: Int,
+        end: Int,
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE
+    ): Int
 
     @Query(
         """
         UPDATE workout_exercises 
-        SET position = position + 1 
+        SET position = position + 1,
+        syncStatus = :syncStatus
         WHERE workoutId = :workoutId 
         AND position BETWEEN :start AND :end
     """
     )
-    suspend fun incrementPositions(workoutId: String, start: Int, end: Int)
+    suspend fun incrementPositions(
+        workoutId: String,
+        start: Int,
+        end: Int,
+        syncStatus: SyncStatus = SyncStatus.PENDING_UPDATE
+    ): Int
 
     @Delete
-    suspend fun delete(workoutExercise: WorkoutExerciseEntity)
+    suspend fun delete(workoutExercise: WorkoutExerciseEntity): Int
 
     @Query("DELETE FROM workout_exercises WHERE id = :id")
-    suspend fun deleteById(id: String)
+    suspend fun deleteById(id: String): Int
 
     @Query("SELECT MAX(position) FROM workout_exercises WHERE workoutId = :workoutId")
     suspend fun getMaxPosition(workoutId: String): Int?

@@ -2,6 +2,7 @@ package com.neyra.gymapp.data.repository
 
 import com.neyra.gymapp.data.dao.TrainingProgramDao
 import com.neyra.gymapp.data.entities.SyncStatus
+import com.neyra.gymapp.data.entities.TrainingProgramEntity
 import com.neyra.gymapp.data.network.NetworkManager
 import com.neyra.gymapp.domain.error.DomainError
 import com.neyra.gymapp.domain.error.runDomainCatching
@@ -12,14 +13,16 @@ import com.neyra.gymapp.domain.repository.TrainingProgramRepository
 import com.neyra.gymapp.openapi.apis.TrainingProgramsApi
 import com.neyra.gymapp.openapi.models.CreateTrainingProgramRequest
 import com.neyra.gymapp.openapi.models.PatchTrainingProgramRequest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
-
 
 /**
  * Implementation of the TrainingProgramRepository that handles CRUD operations
@@ -31,6 +34,66 @@ class TrainingProgramRepositoryImpl @Inject constructor(
     private val trainingProgramsApi: TrainingProgramsApi,
     private val networkManager: NetworkManager
 ) : TrainingProgramRepository {
+
+    // Shared flow for triggering training program refreshes
+    private val refreshTrigger = MutableSharedFlow<String>(replay = 1)
+
+    /**
+     * Implementation of refreshTrainingPrograms method to trigger a refresh of training programs
+     */
+    override suspend fun refreshTrainingPrograms(profileId: String): Result<Boolean> =
+        runDomainCatching {
+            if (!networkManager.isOnline()) {
+                throw DomainError.NetworkError.NoConnection()
+                    .withContext("operation", "refreshTrainingPrograms")
+            }
+
+            try {
+                val response = trainingProgramsApi.listTrainingPrograms()
+
+                if (response.isSuccessful && response.body() != null) {
+                    val programs = response.body()!!.items ?: emptyList()
+
+                    // Convert API models to entities and save to database
+                    val entities = programs.map { program ->
+                        val entity = TrainingProgramEntity(
+                            id = program.id.toString(),
+                            name = program.name,
+                            description = program.description ?: "",
+                            profileId = profileId,
+                            localCreatedAt = program.createdAt.toInstant().toEpochMilli(),
+                            localUpdatedAt = program.updatedAt.toInstant().toEpochMilli(),
+                            serverCreatedAt = program.createdAt.toInstant().toEpochMilli(),
+                            serverUpdatedAt = program.updatedAt.toInstant().toEpochMilli(),
+                            syncStatus = SyncStatus.SYNCED
+                        )
+                        entity
+                    }
+
+                    trainingProgramDao.insertAll(entities)
+
+                    // Trigger a refresh of the flow
+                    refreshTrigger.emit(profileId)
+
+                    return@runDomainCatching true
+                } else {
+                    throw DomainError.NetworkError.ServerError(
+                        statusCode = response.code(),
+                        message = "Failed to fetch training programs: ${
+                            response.errorBody()?.string()
+                        }"
+                    )
+                }
+            } catch (e: Exception) {
+                if (e is DomainError) throw e
+
+                Timber.e(e, "Error refreshing training programs")
+                throw DomainError.NetworkError.ServerError(
+                    statusCode = 500,
+                    message = "Failed to refresh training programs: ${e.message}"
+                )
+            }
+        }
 
     /**
      * Creates a new training program both locally and remotely if network is available.
@@ -57,7 +120,6 @@ class TrainingProgramRepositoryImpl @Inject constructor(
 
         // If online, attempt to sync
         if (networkManager.isOnline()) {
-            Timber.d("Network available, syncing program with server")
             try {
                 val response = trainingProgramsApi.createTrainingProgram(
                     CreateTrainingProgramRequest(
@@ -78,6 +140,9 @@ class TrainingProgramRepositoryImpl @Inject constructor(
                         response.body()!!.createdAt.toInstant().toEpochMilli(),
                         response.body()!!.updatedAt.toInstant().toEpochMilli()
                     )
+
+                    // Trigger a refresh
+                    refreshTrigger.emit(profileId)
 
                     // Return the domain model with updated ID
                     return@runDomainCatching program.copy(id = remoteId)
@@ -216,6 +281,9 @@ class TrainingProgramRepositoryImpl @Inject constructor(
                         SyncStatus.SYNCED,
                         response.body()!!.updatedAt.toInstant().toEpochMilli()
                     )
+
+                    // Trigger a refresh
+                    refreshTrigger.emit(updatedProgram.profileId)
                 } else {
                     val statusCode = response.code()
                     val errorBody = response.errorBody()?.string() ?: "Unknown error"
@@ -250,6 +318,9 @@ class TrainingProgramRepositoryImpl @Inject constructor(
                     .withContext("entityType", "TrainingProgram")
                     .withContext("id", programId)
 
+            // Store program ID for refresh
+            val profileId = program.profileId
+
             // Mark for deletion locally
             trainingProgramDao.updateSyncStatus(
                 programId,
@@ -282,6 +353,9 @@ class TrainingProgramRepositoryImpl @Inject constructor(
                 Timber.d("No network connection, deletion will be synced later")
             }
 
+            // Trigger a refresh
+            refreshTrigger.emit(profileId)
+
             true
         }
 
@@ -313,6 +387,7 @@ class TrainingProgramRepositoryImpl @Inject constructor(
      * @param limit Optional maximum number of results to return
      * @return Flow of training program domain models
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getTrainingPrograms(
         profileId: String,
         sortBy: TrainingProgramRepository.SortCriteria,
@@ -322,43 +397,60 @@ class TrainingProgramRepositoryImpl @Inject constructor(
         Timber.d("Getting training programs for profile: $profileId")
         Timber.d("Sort by: $sortBy, Filter: $filterBy, Limit: $limit")
 
-        return trainingProgramDao.getAllByProfileId(profileId)
-            .map { entities ->
-                // Map entities to domain models
-                entities.map { it.toDomain() }
-            }
-            .map { programs ->
-                // Apply filtering if criteria provided
-                filterBy?.let { criteria ->
-                    programs.filter { program ->
-                        (criteria.minWorkouts == null || program.workoutCount >= criteria.minWorkouts) &&
-                                (criteria.maxWorkouts == null || program.workoutCount <= criteria.maxWorkouts) &&
-                                (criteria.nameContains == null || program.name.contains(
-                                    criteria.nameContains,
-                                    ignoreCase = true
-                                )) &&
-                                (criteria.complexity == null || program.getProgramComplexity() == criteria.complexity)
-                    }
-                } ?: programs
-            }
-            .map { filteredPrograms ->
-                // Sort based on criteria
-                when (sortBy) {
-                    TrainingProgramRepository.SortCriteria.NAME ->
-                        filteredPrograms.sortedBy { it.name }
+        // Trigger refresh for this profile ID
+        refreshTrigger.tryEmit(profileId)
 
-                    TrainingProgramRepository.SortCriteria.WORKOUT_COUNT ->
-                        filteredPrograms.sortedByDescending { it.workoutCount }
+        // Use flatMapLatest to efficiently handle refreshes
+        return refreshTrigger.flatMapLatest { pId ->
+            if (pId != profileId) {
+                // If the refreshed profile ID doesn't match, skip and just use the profile ID
+                refreshTrigger.emit(profileId)
+            }
+
+            trainingProgramDao.getAllByProfileId(profileId)
+                .map { entities ->
+                    // Map entities to domain models
+                    entities.map { it.toDomain() }
                 }
-            }
-            .map { sortedPrograms ->
-                // Apply limit if specified
-                limit?.let { sortedPrograms.take(it) } ?: sortedPrograms
-            }
-            .catch { exception ->
-                Timber.e(exception, "Error getting training programs")
-                throw exception
-            }
+                .map { programs ->
+                    // Apply filtering if criteria provided
+                    filterBy?.let { criteria ->
+                        programs.filter { program ->
+                            (criteria.minWorkouts == null || program.workoutCount >= criteria.minWorkouts) &&
+                                    (criteria.maxWorkouts == null || program.workoutCount <= criteria.maxWorkouts) &&
+                                    (criteria.nameContains == null || program.name.contains(
+                                        criteria.nameContains,
+                                        ignoreCase = true
+                                    )) &&
+                                    (criteria.complexity == null || program.getProgramComplexity() == criteria.complexity)
+                        }
+                    } ?: programs
+                }
+                .map { filteredPrograms ->
+                    // Sort based on criteria
+                    when (sortBy) {
+                        TrainingProgramRepository.SortCriteria.NAME ->
+                            filteredPrograms.sortedBy { it.name }
+
+                        TrainingProgramRepository.SortCriteria.WORKOUT_COUNT ->
+                            filteredPrograms.sortedByDescending { it.workoutCount }
+
+                        TrainingProgramRepository.SortCriteria.RECENTLY_CREATED ->
+                            filteredPrograms.sortedByDescending { it.id }
+
+                        TrainingProgramRepository.SortCriteria.RECENTLY_UPDATED ->
+                            filteredPrograms.sortedByDescending { it.id }
+                    }
+                }
+                .map { sortedPrograms ->
+                    // Apply limit if specified
+                    limit?.let { sortedPrograms.take(it) } ?: sortedPrograms
+                }
+                .catch { exception ->
+                    Timber.e(exception, "Error getting training programs")
+                    throw exception
+                }
+        }
     }
 
     /**

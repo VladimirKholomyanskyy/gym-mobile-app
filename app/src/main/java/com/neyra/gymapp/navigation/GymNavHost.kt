@@ -1,6 +1,5 @@
 package com.neyra.gymapp.navigation
 
-import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,6 +52,7 @@ import com.neyra.gymapp.ui.progress.WorkoutSessionScreen
 import com.neyra.gymapp.ui.scheduling.CalendarView
 import com.neyra.gymapp.ui.workouts.WorkoutExercisesScreen
 import com.neyra.gymapp.ui.workouts.WorkoutsScreen
+import timber.log.Timber
 
 @Composable
 fun GymNavHost() {
@@ -66,7 +66,7 @@ fun GymNavHost() {
     // Debug the routes
     LaunchedEffect(Unit) {
         navController.addOnDestinationChangedListener { _, destination, _ ->
-            Log.d("Navigation", "Current destination: ${destination.route}")
+            Timber.tag("Navigation").d("Current destination: ${destination.route}")
         }
     }
 
@@ -76,7 +76,7 @@ fun GymNavHost() {
             is AuthState.Authenticated -> {
                 // Only navigate if not already on a main screen
                 val currentRoute = navController.currentDestination?.route
-
+                Timber.tag("GymNavHost").d("Authenticated")
                 // Check if we're on an auth screen and navigate to main if needed
 
                 navController.navigate("main") {
@@ -87,10 +87,10 @@ fun GymNavHost() {
 
             is AuthState.Unauthenticated -> {
                 // Only navigate if not already on an auth screen
-                Log.d("GymNavHost", "Unauthenticated")
+                Timber.tag("GymNavHost").d("Unauthenticated")
                 val currentRoute = navController.currentDestination?.route
                 if (currentRoute == null || !currentRoute.startsWith("auth")) {
-                    navController.navigate("auth/login") {
+                    navController.navigate("auth") {
                         popUpTo(0) { inclusive = true }
                     }
                 }

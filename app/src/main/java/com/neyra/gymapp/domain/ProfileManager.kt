@@ -9,6 +9,7 @@ import com.neyra.gymapp.data.preferences.UserPreferences
 import com.neyra.gymapp.openapi.apis.ProfileApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -51,7 +52,7 @@ class ProfileManager @Inject constructor(
 
         try {
             // The API doesn't need ID - it extracts it from JWT token
-
+            Timber.tag("ProfileManager").d("Fetching profile from server")
             val response = profileApi.getProfile()
 
             if (response.isSuccessful && response.body() != null) {
@@ -69,7 +70,7 @@ class ProfileManager @Inject constructor(
                 return profileEntity
             }
         } catch (e: Exception) {
-            Log.e("ProfileManager", "Failed to fetch profile: ${e.message}")
+            Timber.tag("ProfileManager").e("Failed to fetch profile: ${e.message}")
         }
 
         return null
@@ -79,8 +80,18 @@ class ProfileManager @Inject constructor(
     suspend fun getCurrentProfileId(fetchIfNeeded: Boolean = true): String? {
         // Try from preferences first
         val profileId = userPreferences.getProfileId()
+
         if (profileId != null) {
-            return profileId
+            // Verify profile exists in the database
+            val profile = profileDao.getProfileById(profileId)
+
+            if (profile != null) {
+                return profileId
+            } else {
+                Timber.w("Profile ID from preferences not found in database: $profileId")
+                // Clear the invalid ID
+                userPreferences.clearProfileId()
+            }
         }
 
         // If allowed to fetch and we don't have an ID, get the profile

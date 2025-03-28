@@ -20,7 +20,7 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "app_database"
-        ).build()
+        ).fallbackToDestructiveMigration().build()
     }
 
     @Provides
@@ -46,7 +46,7 @@ object DatabaseModule {
 
     @Provides
     fun provideSettingsDao(database: AppDatabase) = database.settingsDao()
-    
+
     @Provides
     fun provideExerciseDao(database: AppDatabase) = database.exerciseDao()
 

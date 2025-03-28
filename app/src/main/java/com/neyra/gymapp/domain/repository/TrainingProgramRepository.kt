@@ -1,6 +1,5 @@
 package com.neyra.gymapp.domain.repository
 
-
 import com.neyra.gymapp.domain.model.TrainingProgram
 import kotlinx.coroutines.flow.Flow
 
@@ -25,7 +24,14 @@ interface TrainingProgramRepository {
         program: TrainingProgram
     ): Result<TrainingProgram>
 
-
+    /**
+     * Update an existing training program
+     *
+     * @param id ID of the program to update
+     * @param name Optional new name
+     * @param description Optional new description
+     * @return Result containing the updated training program
+     */
     suspend fun updateFields(
         id: String,
         name: String? = null,
@@ -48,7 +54,6 @@ interface TrainingProgramRepository {
      */
     suspend fun getTrainingProgram(programId: String): TrainingProgram?
 
-
     /**
      * Get training programs with additional filtering and sorting
      *
@@ -65,7 +70,6 @@ interface TrainingProgramRepository {
         limit: Int? = null
     ): Flow<List<TrainingProgram>>
 
-
     /**
      * Check if a training program exists
      *
@@ -75,11 +79,21 @@ interface TrainingProgramRepository {
     suspend fun trainingProgramExists(programId: String): Boolean
 
     /**
+     * Trigger a refresh of training programs
+     *
+     * @param profileId ID of the profile to refresh programs for
+     * @return Result indicating success or failure
+     */
+    suspend fun refreshTrainingPrograms(profileId: String): Result<Boolean>
+
+    /**
      * Sorting criteria for training programs
      */
     enum class SortCriteria {
         NAME,
-        WORKOUT_COUNT
+        WORKOUT_COUNT,
+        RECENTLY_CREATED,
+        RECENTLY_UPDATED
     }
 
     /**

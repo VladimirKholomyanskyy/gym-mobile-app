@@ -1,12 +1,9 @@
 package com.neyra.gymapp.domain.mapper
 
-import com.neyra.gymapp.data.entities.ExerciseEntity
 import com.neyra.gymapp.data.entities.SyncStatus
 import com.neyra.gymapp.data.entities.WorkoutEntity
-import com.neyra.gymapp.data.entities.WorkoutExerciseEntity
 import com.neyra.gymapp.domain.model.Workout
 import com.neyra.gymapp.domain.model.WorkoutExercise
-import com.neyra.gymapp.domain.model.toDomain
 import java.util.UUID
 
 /**
@@ -45,17 +42,5 @@ fun Workout.toEntity(syncStatus: SyncStatus = SyncStatus.PENDING_CREATE): Workou
 }
 
 
-fun WorkoutExerciseEntity.toDomain(
-    exercise: ExerciseEntity
-): WorkoutExercise {
-    return WorkoutExercise(
-        id = this.id,
-        workoutId = this.workoutId,
-        sets = this.sets,
-        reps = this.reps,
-        position = this.position,
-        exercise = exercise.toDomain()
-    )
-}
 
 
